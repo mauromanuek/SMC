@@ -3,44 +3,432 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>SMC Trading Bot - Minimal</title>
-  
-  <!-- Tailwind CSS via CDN -->
+  <title>SMC Trading Bot - Deriv</title>
+
+  <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
-  
-  <!-- LightweightCharts (SEM async para evitar race conditions) -->
+  <script>
+    tailwind.config = { darkMode: 'class' }
+  </script>
+
+  <!-- Lightweight Charts CDN -->
   <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
-  
-  <style>
-    body {
-      background-color: #0f172a;
-    }
-    
-    /* Scrollbar customizado */
-    ::-webkit-scrollbar {
-      width: 4px;
-      height: 4px;
-    }
-    
-    ::-webkit-scrollbar-track {
-      background: #0B0F19;
-    }
-    
-    ::-webkit-scrollbar-thumb {
-      background: #334155;
-      border-radius: 4px;
-    }
-    
-    /* Input number sem setas */
-    input[type=number]::-webkit-inner-spin-button,
-    input[type=number]::-webkit-outer-spin-button {
-      -webkit-appearance: none;
-      margin: 0;
-    }
-  </style>
 </head>
-<body class="dark bg-slate-950 text-slate-100">
-  <div id="root"></div>
-  <script type="module" src="/main.jsx"></script>
+<body class="bg-[#0f172a] text-slate-200 antialiased overflow-x-hidden font-sans">
+
+  <!-- TELA DE LOGIN -->
+  <div id="login-screen" class="min-h-screen flex items-center justify-center p-4">
+    <div class="w-full max-w-md bg-slate-800/80 border border-slate-700 rounded-2xl p-8 shadow-2xl">
+      <div class="text-center mb-8">
+        <div class="inline-flex items-center justify-center w-16 h-16 bg-blue-500/20 rounded-full mb-4">
+          <!-- Ícone SVG -->
+          <svg class="w-8 h-8 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path></svg>
+        </div>
+        <h1 class="text-3xl font-bold text-white mb-2">SMC <span class="text-blue-400">BOT</span></h1>
+        <p class="text-xs text-slate-400 uppercase tracking-widest">Deriv API Puro (Sem Build)</p>
+      </div>
+      
+      <div class="space-y-5">
+        <div>
+          <label class="block text-xs text-slate-400 font-semibold mb-2">TOKEN DERIV (Read/Trade)</label>
+          <input type="password" id="api-token" placeholder="Insira seu token..." class="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-white focus:border-blue-500 focus:outline-none transition" />
+        </div>
+        <div id="login-error" class="hidden text-sm text-red-400 bg-red-500/10 p-3 rounded-lg flex items-center gap-2"></div>
+        <button id="btn-connect" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-lg transition flex justify-center items-center gap-2">
+          <span id="btn-connect-text">ENTRAR E ABRIR GRÁFICO</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TELA DO BOT -->
+  <div id="trading-screen" class="hidden min-h-screen flex flex-col">
+    <!-- Header -->
+    <header class="bg-slate-800/80 border-b border-slate-700 p-4">
+      <div class="max-w-7xl mx-auto flex justify-between items-center">
+        <div class="flex items-center gap-3">
+          <svg class="w-6 h-6 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M22 12h-4l-3 9L9 3l-3 9H2"></path></svg>
+          <h1 class="font-bold text-white tracking-wide">SMC TERMINAL</h1>
+        </div>
+        <div class="bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 flex items-center gap-3">
+          <span id="account-type" class="text-xs font-bold text-blue-400 bg-blue-500/20 px-2 py-1 rounded">---</span>
+          <span id="account-balance" class="text-green-400 font-mono font-bold text-sm">$0.00</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Controles -->
+    <div class="bg-slate-800/40 border-b border-slate-700 p-4">
+      <div class="max-w-7xl mx-auto grid grid-cols-2 md:grid-cols-6 gap-4 items-end">
+        <div class="flex flex-col">
+          <label class="text-xs text-slate-400 font-semibold mb-1">Ativo</label>
+          <select id="asset" class="bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white">
+            <option value="R_10">Volatility 10</option>
+            <option value="R_25">Volatility 25</option>
+            <option value="frxEURUSD">EUR/USD</option>
+          </select>
+        </div>
+        <div class="flex flex-col">
+          <label class="text-xs text-slate-400 font-semibold mb-1">Tempo</label>
+          <select id="timeframe" class="bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white">
+            <option value="5M">5 Minutos</option>
+            <option value="15M">15 Minutos</option>
+          </select>
+        </div>
+        <div class="flex flex-col">
+          <label class="text-xs text-slate-400 font-semibold mb-1">Aposta ($)</label>
+          <input type="number" id="stake" value="10" class="bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-center text-white" />
+        </div>
+        <div class="flex flex-col">
+          <label class="text-xs text-green-400 font-semibold mb-1">Take Profit ($)</label>
+          <input type="number" id="take-profit" value="5" class="bg-slate-900 border border-green-800 rounded-lg px-3 py-2 text-sm text-center text-white" />
+        </div>
+        <div class="flex flex-col">
+          <label class="text-xs text-red-400 font-semibold mb-1">Stop Loss ($)</label>
+          <input type="number" id="stop-loss" value="5" class="bg-slate-900 border border-red-800 rounded-lg px-3 py-2 text-sm text-center text-white" />
+        </div>
+        <button id="btn-analyze" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 rounded-lg transition h-[38px] text-sm">
+          📊 ANALISAR SMC
+        </button>
+      </div>
+    </div>
+
+    <!-- Layout Principal -->
+    <main class="flex-1 max-w-7xl mx-auto w-full p-4 grid grid-cols-1 lg:grid-cols-3 gap-4">
+      
+      <!-- OBRIGATÓRIO: Estilo inline para garantir altura do gráfico -->
+      <section class="lg:col-span-2 bg-slate-800/50 border border-slate-700 rounded-xl overflow-hidden relative shadow-xl">
+        <div class="absolute top-4 left-4 z-10 bg-slate-900/80 border border-slate-700 px-3 py-1.5 rounded-lg flex gap-4 text-xs font-mono">
+          <span id="chart-title" class="text-white font-bold">Volatility 10</span>
+          <span id="current-price" class="text-cyan-400 font-bold">0.0000</span>
+        </div>
+        <div id="chart-container" style="position: relative; width: 100%; height: 500px;"></div>
+      </section>
+
+      <!-- Sidebar -->
+      <section class="lg:col-span-1 flex flex-col gap-4">
+        <!-- IA Panel -->
+        <div class="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
+          <div class="flex items-center gap-2 mb-2 pb-2 border-b border-slate-700">
+            <h2 class="text-xs font-bold text-blue-400 uppercase tracking-wider">Monitor SMC</h2>
+          </div>
+          <p id="ai-message" class="text-sm text-slate-300 font-mono">Aguardando conexão...</p>
+        </div>
+
+        <!-- Painel de Sinal (Apenas aparece após análise) -->
+        <div id="signal-panel" class="hidden bg-slate-800/50 border border-slate-700 rounded-xl p-5">
+          <div class="text-center mb-6">
+            <p class="text-xs text-slate-400 uppercase mb-1">Entrada Calculada</p>
+            <div id="signal-type" class="text-4xl font-black text-white">---</div>
+            <p class="text-sm mt-2 text-slate-400 font-mono">Entry: <span id="signal-entry">0.00</span></p>
+          </div>
+          <button id="btn-execute" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-4 rounded-lg transition shadow-lg shadow-green-900/20">
+            ⚡ EXECUTAR ORDEM
+          </button>
+        </div>
+
+        <!-- Painel de Contrato Ativo (Esconde o de sinal e mostra este) -->
+        <div id="active-trade-panel" class="hidden bg-slate-800 border-2 border-blue-500/50 rounded-xl p-5 shadow-[0_0_20px_rgba(59,130,246,0.15)] flex flex-col items-center">
+          <h3 class="text-sm text-slate-400 uppercase mb-2 font-bold animate-pulse">Contrato Ativo</h3>
+          <div id="real-pnl" class="text-5xl font-black mb-6 text-white">0.00</div>
+          <button id="btn-close-trade" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-4 rounded-lg flex justify-center items-center gap-2 transition">
+            PARAR / FECHAR ORDEM
+          </button>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- LÓGICA JAVASCRIPT PURO -->
+  <script>
+    // Referências do DOM
+    const ui = {
+      loginScreen: document.getElementById('login-screen'),
+      tradingScreen: document.getElementById('trading-screen'),
+      apiToken: document.getElementById('api-token'),
+      btnConnect: document.getElementById('btn-connect'),
+      btnConnectText: document.getElementById('btn-connect-text'),
+      loginError: document.getElementById('login-error'),
+      
+      accountType: document.getElementById('account-type'),
+      accountBalance: document.getElementById('account-balance'),
+      asset: document.getElementById('asset'),
+      timeframe: document.getElementById('timeframe'),
+      stake: document.getElementById('stake'),
+      takeProfit: document.getElementById('take-profit'),
+      stopLoss: document.getElementById('stop-loss'),
+      
+      chartTitle: document.getElementById('chart-title'),
+      currentPrice: document.getElementById('current-price'),
+      chartContainer: document.getElementById('chart-container'),
+      
+      aiMessage: document.getElementById('ai-message'),
+      btnAnalyze: document.getElementById('btn-analyze'),
+      
+      signalPanel: document.getElementById('signal-panel'),
+      signalType: document.getElementById('signal-type'),
+      signalEntry: document.getElementById('signal-entry'),
+      btnExecute: document.getElementById('btn-execute'),
+      
+      activeTradePanel: document.getElementById('active-trade-panel'),
+      realPnl: document.getElementById('real-pnl'),
+      btnCloseTrade: document.getElementById('btn-close-trade')
+    };
+
+    // Estado Global da Aplicação
+    const state = {
+      ws: null,
+      appId: 121512,
+      chart: null,
+      candleSeries: null,
+      priceLines: [],
+      candleData: [],
+      activeCandleSub: null,
+      activeContractId: null,
+      currentSignal: null,
+    };
+
+    // Atualizador de Mensagem da IA
+    const setAiMsg = (msg) => { ui.aiMessage.innerText = msg; };
+
+    // =====================================
+    // INICIALIZAÇÃO DO GRÁFICO
+    // =====================================
+    function initChart() {
+      state.chart = LightweightCharts.createChart(ui.chartContainer, {
+        width: ui.chartContainer.clientWidth,
+        height: 500,
+        layout: { background: { type: 'solid', color: 'transparent' }, textColor: '#cbd5e1' },
+        grid: { vertLines: { color: 'rgba(71,85,105,0.2)' }, horzLines: { color: 'rgba(71,85,105,0.2)' } },
+        timeScale: { timeVisible: true, secondsVisible: false },
+      });
+
+      state.candleSeries = state.chart.addCandlestickSeries({
+        upColor: '#22c55e', downColor: '#ef4444', borderVisible: false,
+        wickUpColor: '#22c55e', wickDownColor: '#ef4444',
+      });
+
+      // Responsividade do Gráfico
+      new ResizeObserver(entries => {
+        if (entries.length === 0 || entries[0].target !== ui.chartContainer) return;
+        const newRect = entries[0].contentRect;
+        state.chart.applyOptions({ width: newRect.width, height: newRect.height });
+      }).observe(ui.chartContainer);
+    }
+
+    // =====================================
+    // CONEXÃO COM API DERIV
+    // =====================================
+    ui.btnConnect.addEventListener('click', () => {
+      const token = ui.apiToken.value.trim();
+      if(!token) return;
+
+      ui.btnConnectText.innerText = "CONECTANDO...";
+      ui.btnConnect.disabled = true;
+      
+      state.ws = new WebSocket(`wss://ws.derivws.com/websockets/v3?app_id=${state.appId}`);
+
+      state.ws.onopen = () => {
+        state.ws.send(JSON.stringify({ authorize: token }));
+      };
+
+      state.ws.onmessage = (msg) => {
+        const data = JSON.parse(msg.data);
+
+        if (data.error) {
+          ui.loginError.innerText = data.error.message;
+          ui.loginError.classList.remove('hidden');
+          ui.btnConnectText.innerText = "ENTRAR E ABRIR GRÁFICO";
+          ui.btnConnect.disabled = false;
+          return;
+        }
+
+        // 1. Autorizado
+        if (data.msg_type === 'authorize') {
+          ui.loginScreen.classList.add('hidden');
+          ui.tradingScreen.classList.remove('hidden');
+          
+          ui.accountType.innerText = data.authorize.is_virtual ? 'DEMO' : 'REAL';
+          ui.accountBalance.innerText = `$${data.authorize.balance}`;
+          
+          initChart();
+          state.ws.send(JSON.stringify({ balance: 1, subscribe: 1 }));
+          loadAssetStream();
+          setAiMsg('Conectado! Aguarde os dados do gráfico carregarem...');
+        }
+
+        // 2. Saldo atualizado
+        if (data.msg_type === 'balance') {
+          ui.accountBalance.innerText = `$${data.balance.balance}`;
+        }
+
+        // 3. Velas Históricas
+        if (data.msg_type === 'candles') {
+          state.candleData = data.candles.map(c => ({
+            time: c.epoch, open: c.open, high: c.high, low: c.low, close: c.close
+          }));
+          state.candleSeries.setData(state.candleData);
+          if (data.subscription) state.activeCandleSub = data.subscription.id;
+          setAiMsg('Gráfico carregado. Pressione "ANALISAR SMC" para gerar entrada.');
+        }
+
+        // 4. Tick Atualizado (Preço ao Vivo)
+        if (data.msg_type === 'ohlc' && data.ohlc) {
+          const c = data.ohlc;
+          const liveCandle = {
+            time: c.open_time, open: parseFloat(c.open), high: parseFloat(c.high),
+            low: parseFloat(c.low), close: parseFloat(c.close)
+          };
+          ui.currentPrice.innerText = liveCandle.close.toFixed(5);
+          if(state.candleData.length > 0) {
+            state.candleSeries.update(liveCandle);
+            state.candleData[state.candleData.length - 1] = liveCandle; // Atualiza último item local
+          }
+        }
+
+        // 5. Confirmação de Ordem
+        if (data.msg_type === 'buy') {
+          state.activeContractId = data.buy.contract_id;
+          
+          // Oculta painel de sinal, mostra painel ativo
+          ui.signalPanel.classList.add('hidden');
+          ui.activeTradePanel.classList.remove('hidden');
+          setAiMsg('✅ Ordem Aberta! Lendo Lucro/Perda ao vivo da corretora...');
+
+          // Inscrição no PnL do Contrato
+          state.ws.send(JSON.stringify({
+            proposal_open_contract: 1,
+            contract_id: state.activeContractId,
+            subscribe: 1
+          }));
+        }
+
+        // 6. Atualização de PnL ao Vivo e Auto TP/SL
+        if (data.msg_type === 'proposal_open_contract' && data.proposal_open_contract) {
+          const contract = data.proposal_open_contract;
+          
+          if (contract.is_sold) {
+            state.activeContractId = null;
+            ui.activeTradePanel.classList.add('hidden');
+            setAiMsg(`✅ Contrato encerrado. Lucro Final: $${contract.profit}`);
+            state.ws.send(JSON.stringify({ balance: 1 })); // Atualiza saldo
+            return;
+          }
+
+          const profit = parseFloat(contract.profit);
+          ui.realPnl.innerText = (profit > 0 ? '+' : '') + profit.toFixed(2);
+          ui.realPnl.className = `text-5xl font-black mb-6 ${profit >= 0 ? 'text-green-400' : 'text-red-400'}`;
+
+          // Lê TP e SL dos inputs
+          const tp = parseFloat(ui.takeProfit.value);
+          const sl = parseFloat(ui.stopLoss.value);
+
+          // Verifica se bateu o limite
+          if (!isNaN(tp) && tp > 0 && profit >= tp) {
+            setAiMsg('🎯 Take Profit Atingido! Solicitando fechamento...');
+            closeTrade();
+          } else if (!isNaN(sl) && sl > 0 && profit <= -sl) {
+            setAiMsg('🛑 Stop Loss Atingido! Solicitando fechamento...');
+            closeTrade();
+          }
+        }
+      };
+    });
+
+    // =====================================
+    // CARREGAR GRÁFICO (Troca de Ativo/Tempo)
+    // =====================================
+    function loadAssetStream() {
+      if(!state.ws) return;
+      if (state.activeCandleSub) {
+        state.ws.send(JSON.stringify({ forget: state.activeCandleSub }));
+      }
+      
+      const asset = ui.asset.value;
+      const gran = ui.timeframe.value === '5M' ? 300 : 900;
+      ui.chartTitle.innerText = asset;
+
+      state.ws.send(JSON.stringify({
+        ticks_history: asset,
+        style: 'candles',
+        end: 'latest',
+        count: 150,
+        granularity: gran,
+        subscribe: 1
+      }));
+    }
+
+    ui.asset.addEventListener('change', loadAssetStream);
+    ui.timeframe.addEventListener('change', loadAssetStream);
+
+    // =====================================
+    // LÓGICA SMART MONEY CONCEPTS
+    // =====================================
+    ui.btnAnalyze.addEventListener('click', () => {
+      if (state.candleData.length < 50) {
+        setAiMsg('❌ Aguarde o carregamento completo do gráfico.');
+        return;
+      }
+      setAiMsg('Analisando Order Blocks (BOS e Liquidez)...');
+      
+      setTimeout(() => {
+        const last50 = state.candleData.slice(-50);
+        const highs = last50.map(c => c.high);
+        const lows = last50.map(c => c.low);
+        const currentPrice = last50[last50.length - 1].close;
+
+        const maxPrice = Math.max(...highs);
+        const minPrice = Math.min(...lows);
+        const midPoint = (maxPrice + minPrice) / 2;
+
+        // Atualizar Linhas
+        state.priceLines.forEach(l => state.candleSeries.removePriceLine(l));
+        const resLine = state.candleSeries.createPriceLine({ price: maxPrice, color: '#ef4444', lineStyle: 2, title: 'OB Res' });
+        const supLine = state.candleSeries.createPriceLine({ price: minPrice, color: '#10b981', lineStyle: 2, title: 'OB Sup' });
+        state.priceLines = [resLine, supLine];
+
+        const isCall = currentPrice < midPoint;
+        state.currentSignal = { type: isCall ? 'CALL' : 'PUT', entry: currentPrice };
+        
+        ui.signalType.innerText = isCall ? 'CALL ↗' : 'PUT ↘';
+        ui.signalType.className = `text-4xl font-black ${isCall ? 'text-green-400' : 'text-red-400'}`;
+        ui.signalEntry.innerText = currentPrice;
+        
+        ui.signalPanel.classList.remove('hidden');
+        setAiMsg(`✅ SMC Identificou oportunidade de ${isCall ? 'COMPRA (CALL)' : 'VENDA (PUT)'}. Aguardando sua execução.`);
+      }, 500);
+    });
+
+    // =====================================
+    // EXECUTAR COMPRA E FECHAMENTO
+    // =====================================
+    ui.btnExecute.addEventListener('click', () => {
+      if(!state.currentSignal || !state.ws) return;
+      const stakeVal = parseFloat(ui.stake.value);
+      
+      state.ws.send(JSON.stringify({
+        buy: 1,
+        price: stakeVal,
+        parameters: {
+          amount: stakeVal,
+          basis: 'stake',
+          contract_type: state.currentSignal.type,
+          currency: 'USD',
+          duration: 1,
+          duration_unit: 'm',
+          symbol: ui.asset.value,
+        }
+      }));
+    });
+
+    function closeTrade() {
+      if(!state.activeContractId || !state.ws) return;
+      state.ws.send(JSON.stringify({ sell: state.activeContractId, price: 0 }));
+    }
+
+    ui.btnCloseTrade.addEventListener('click', closeTrade);
+
+  </script>
 </body>
 </html>
