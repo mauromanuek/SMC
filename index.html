@@ -49,7 +49,6 @@
             <p class="text-gray-500 text-xs font-bold uppercase mb-4 mt-4">Estratégias</p>
             <ul class="space-y-2">
                 <li class="bg-blue-600/20 text-blue-400 p-3 rounded-lg cursor-pointer border border-blue-500/30"><i class="fa-solid fa-bolt mr-2"></i> SMC + Larry 9.1</li>
-                <li class="hover:bg-gray-800 text-gray-400 p-3 rounded-lg cursor-pointer transition"><i class="fa-solid fa-lock mr-2"></i> Hedging (Em breve)</li>
             </ul>
         </div>
 
@@ -98,23 +97,14 @@
             </div>
             
             <div class="space-y-4">
-                <!-- Seletor de Ativo -->
                 <div class="flex justify-between items-center bg-gray-900 p-3 rounded-lg border border-gray-700">
                     <span class="text-sm font-semibold text-gray-300">Ativo</span>
                     <select id="input-ativo" class="bg-gray-800 border border-gray-600 text-white rounded outline-none focus:border-blue-500 py-1 px-2">
-                        <optgroup label="Sintéticos (24/7)">
-                            <option value="R_10">Volatility 10</option>
-                            <option value="R_25">Volatility 25</option>
-                            <option value="R_50">Volatility 50</option>
-                        </optgroup>
-                        <optgroup label="Forex (Dias Úteis)">
-                            <option value="frxEURUSD">EUR/USD</option>
-                            <option value="frxGBPUSD">GBP/USD</option>
-                            <option value="frxUSDJPY">USD/JPY</option>
-                        </optgroup>
+                        <option value="R_10">Volatility 10</option>
+                        <option value="R_25">Volatility 25</option>
+                        <option value="R_50">Volatility 50</option>
                     </select>
                 </div>
-                <!-- Stake, TP, SL -->
                 <div class="flex justify-between items-center bg-gray-900 p-3 rounded-lg border border-gray-700">
                     <span class="text-sm font-semibold text-gray-300">Stake (Entrada) $</span>
                     <input type="number" id="input-stake" value="10" class="w-20 bg-gray-800 border border-gray-600 text-center rounded text-white py-1 outline-none">
@@ -135,7 +125,6 @@
         </div>
     </div>
 
-    <!-- SCRIPT DE CONEXÃO -->
     <script>
         let ws_python = null;
         let wakeLock = null;
@@ -152,8 +141,11 @@
                 if ('wakeLock' in navigator) { wakeLock = await navigator.wakeLock.request('screen'); }
             } catch (err) {}
 
-            // Conecta ao Python (Mude localhost se usar Render)
-            ws_python = new WebSocket("ws://localhost:8000/painel");
+            // CONEXÃO DINÂMICA: Descobre sozinho se está no Render ou Replit
+            const protocolo = window.location.protocol === "https:" ? "wss://" : "ws://";
+            const ws_url = protocolo + window.location.host + "/painel";
+            
+            ws_python = new WebSocket(ws_url);
 
             ws_python.onopen = () => {
                 ws_python.send(JSON.stringify({ 
