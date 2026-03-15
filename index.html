@@ -11,11 +11,9 @@
         ::-webkit-scrollbar { width: 4px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #3b82f6; border-radius: 4px; }
-        .toggle-checkbox:checked { right: 0; border-color: #10B981; }
-        .toggle-checkbox:checked + .toggle-label { background-color: #10B981; }
     </style>
 </head>
-<body class="bg-gray-900 text-white h-screen w-screen overflow-hidden selection:bg-blue-500">
+<body class="bg-gray-900 text-white h-screen w-screen overflow-hidden selection:bg-blue-500 relative">
 
     <!-- TELA 1: LOGIN -->
     <div id="login-screen" class="fixed inset-0 z-50 flex items-center justify-center bg-gray-950 px-4">
@@ -34,54 +32,64 @@
 
     <!-- TELA 2: PRINCIPAL -->
     <div id="main-screen" class="hidden flex-col h-full w-full">
-        <!-- NAVBAR Superior -->
-        <header class="bg-gray-800 border-b border-gray-700 h-16 flex items-center justify-between px-4 shrink-0">
-            <button onclick="toggleMenu()" class="text-gray-400 hover:text-white text-xl"><i class="fa-solid fa-bars"></i></button>
+        <!-- NAVBAR Superior com Saldo -->
+        <header class="bg-gray-800 border-b border-gray-700 h-16 flex items-center justify-between px-4 shrink-0 z-30 relative">
+            <div class="flex items-center gap-3">
+                <button onclick="toggleMenu()" class="text-gray-400 hover:text-white text-xl p-2"><i class="fa-solid fa-bars"></i></button>
+                <!-- SALDO AQUI -->
+                <div class="hidden sm:block text-xs text-gray-400">Saldo: <span id="saldo-display" class="text-green-400 font-bold text-sm tracking-wider">$0.00</span></div>
+            </div>
+            
             <div class="flex items-center gap-2">
                 <i class="fa-solid fa-crosshairs text-blue-500"></i>
                 <span class="font-bold tracking-widest text-sm" id="ativo-display">R_10</span>
             </div>
-            <button onclick="toggleSettings()" class="text-gray-400 hover:text-white text-xl"><i class="fa-solid fa-gear"></i></button>
+            <button onclick="toggleSettings()" class="text-gray-400 hover:text-white text-xl p-2"><i class="fa-solid fa-gear"></i></button>
         </header>
 
-        <!-- MENU LATERAL -->
-        <div id="side-menu" class="fixed inset-y-0 left-0 w-64 bg-gray-900 border-r border-gray-700 transform -translate-x-full transition-transform duration-300 z-40 pt-16 px-4 shadow-2xl">
-            <p class="text-gray-500 text-xs font-bold uppercase mb-4 mt-4">Estratégias</p>
-            <ul class="space-y-2">
-                <li class="bg-blue-600/20 text-blue-400 p-3 rounded-lg cursor-pointer border border-blue-500/30"><i class="fa-solid fa-bolt mr-2"></i> SMC + Larry 9.1</li>
-            </ul>
+        <!-- Saldo Mobile (Mostra embaixo do header no celular) -->
+        <div class="sm:hidden bg-gray-800 border-b border-gray-700 py-1 text-center shrink-0">
+            <span class="text-xs text-gray-400">Saldo:</span> <span id="saldo-display-mobile" class="text-green-400 font-bold text-sm tracking-wider">$0.00</span>
         </div>
 
-        <main class="flex-1 overflow-hidden flex flex-col p-4 gap-4 relative">
-            <!-- Controle Automático -->
-            <div class="bg-gray-800 border border-gray-700 rounded-xl p-4 flex justify-between items-center shrink-0">
-                <div>
-                    <h2 class="font-bold text-sm">Modo Automático</h2>
-                    <p id="auto-status-text" class="text-xs text-yellow-500">Desligado (Apenas Sinais)</p>
-                </div>
-                <div class="relative inline-block w-12 mr-2 align-middle select-none transition duration-200 ease-in">
-                    <input type="checkbox" id="auto-toggle" onchange="toggleAutoMode()" class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 border-gray-600 appearance-none cursor-pointer z-10 top-0 left-0"/>
-                    <label for="auto-toggle" class="toggle-label block overflow-hidden h-6 rounded-full bg-gray-600 cursor-pointer transition-colors"></label>
-                </div>
-            </div>
+        <div id="menu-overlay" onclick="toggleMenu()" class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm z-40"></div>
+
+        <!-- MENU LATERAL -->
+        <div id="side-menu" class="fixed inset-y-0 left-0 w-64 bg-gray-900 border-r border-gray-700 transform -translate-x-full transition-transform duration-300 z-50 pt-16 px-4 shadow-2xl flex flex-col">
+            <p class="text-gray-500 text-xs font-bold uppercase mb-4 mt-4">Estratégias</p>
+            <ul class="space-y-2 flex-1">
+                <li class="bg-blue-600/20 text-blue-400 p-3 rounded-lg cursor-pointer border border-blue-500/30"><i class="fa-solid fa-bolt mr-2"></i> SMC + Larry 9.1</li>
+                <li class="hover:bg-gray-800 text-gray-400 p-3 rounded-lg cursor-pointer transition"><i class="fa-solid fa-lock mr-2"></i> Hedging (Em breve)</li>
+            </ul>
+            <button onclick="toggleMenu()" class="mb-8 p-3 bg-gray-800 rounded-lg text-gray-400 hover:text-white text-center">
+                <i class="fa-solid fa-arrow-left mr-2"></i> Recolher Menu
+            </button>
+        </div>
+
+        <main class="flex-1 overflow-hidden flex flex-col p-4 gap-4 relative z-10">
+            <!-- BOTÃO GRANDE LIGAR / DESLIGAR -->
+            <button id="btn-power" onclick="toggleAutoMode()" class="w-full bg-gray-700 border border-gray-600 hover:bg-gray-600 text-white font-black tracking-widest py-4 rounded-xl transition-all flex flex-col items-center justify-center shrink-0 shadow-lg">
+                <span id="power-text" class="text-lg">▶ INICIAR TRADING</span>
+                <span id="power-sub" class="text-[10px] text-gray-400 font-normal mt-1">Atualmente: Apenas analisando o mercado</span>
+            </button>
 
             <!-- ESTATÍSTICAS -->
-            <div id="stats-panel" class="hidden grid grid-cols-3 gap-2 shrink-0">
-                <div class="bg-gray-800 border border-gray-700 rounded-lg p-3 text-center">
+            <div id="stats-panel" class="hidden grid grid-cols-3 gap-2 shrink-0 transition-all">
+                <div class="bg-gray-800 border border-gray-700 rounded-lg p-3 text-center shadow-inner">
                     <p class="text-[10px] text-gray-400 uppercase">Líquido</p>
                     <p class="text-lg font-bold text-green-400">+$0.00</p>
                 </div>
-                <div class="bg-gray-800 border border-gray-700 rounded-lg p-3 text-center">
+                <div class="bg-gray-800 border border-gray-700 rounded-lg p-3 text-center shadow-inner">
                     <p class="text-[10px] text-gray-400 uppercase">Wins</p>
                     <p class="text-lg font-bold text-blue-400">0</p>
                 </div>
-                <div class="bg-gray-800 border border-gray-700 rounded-lg p-3 text-center">
+                <div class="bg-gray-800 border border-gray-700 rounded-lg p-3 text-center shadow-inner">
                     <p class="text-[10px] text-gray-400 uppercase">Loss</p>
                     <p class="text-lg font-bold text-red-400">0</p>
                 </div>
             </div>
 
-            <!-- TELA DA IA -->
+            <!-- TELA DA IA (Terminal Narrador) -->
             <div class="flex-1 ai-terminal rounded-xl border border-gray-700 p-4 overflow-y-auto flex flex-col gap-2" id="ai-log">
                 <div class="text-gray-500 text-xs text-center mb-2">--- MOTOR INICIADO ---</div>
             </div>
@@ -90,44 +98,53 @@
 
     <!-- MODAL DE CONFIGURAÇÕES -->
     <div id="settings-modal" class="hidden fixed inset-0 z-50 flex items-end justify-center bg-black/70 backdrop-blur-sm px-4 pb-4">
-        <div class="bg-gray-800 border border-gray-700 w-full max-w-md rounded-2xl p-6 shadow-2xl">
+        <div class="bg-gray-800 border border-gray-700 w-full max-w-md rounded-2xl p-6 shadow-2xl transform transition-transform">
             <div class="flex justify-between items-center mb-6">
                 <h3 class="font-bold text-lg"><i class="fa-solid fa-sliders text-blue-500 mr-2"></i> Parâmetros</h3>
-                <button onclick="toggleSettings()" class="text-gray-400 hover:text-white"><i class="fa-solid fa-xmark text-xl"></i></button>
+                <button onclick="toggleSettings()" class="text-gray-400 hover:text-white p-2"><i class="fa-solid fa-xmark text-xl"></i></button>
             </div>
             
             <div class="space-y-4">
                 <div class="flex justify-between items-center bg-gray-900 p-3 rounded-lg border border-gray-700">
                     <span class="text-sm font-semibold text-gray-300">Ativo</span>
-                    <select id="input-ativo" class="bg-gray-800 border border-gray-600 text-white rounded outline-none focus:border-blue-500 py-1 px-2">
+                    <select id="input-ativo" class="bg-gray-800 border border-gray-600 text-white rounded outline-none focus:border-blue-500 py-1 px-2 text-sm">
                         <option value="R_10">Volatility 10</option>
                         <option value="R_25">Volatility 25</option>
                         <option value="R_50">Volatility 50</option>
+                        <option value="frxEURUSD">EUR/USD</option>
                     </select>
                 </div>
                 <div class="flex justify-between items-center bg-gray-900 p-3 rounded-lg border border-gray-700">
                     <span class="text-sm font-semibold text-gray-300">Stake (Entrada) $</span>
-                    <input type="number" id="input-stake" value="10" class="w-20 bg-gray-800 border border-gray-600 text-center rounded text-white py-1 outline-none">
+                    <input type="number" id="input-stake" value="10" class="w-20 bg-gray-800 border border-gray-600 text-center rounded text-white py-1 outline-none text-sm">
                 </div>
                 <div class="flex justify-between items-center bg-gray-900 p-3 rounded-lg border border-gray-700">
                     <span class="text-sm font-semibold text-green-400">Take Profit $</span>
-                    <input type="number" id="input-tp" value="50" class="w-20 bg-gray-800 border border-gray-600 text-center rounded text-white py-1 outline-none">
+                    <input type="number" id="input-tp" value="50" class="w-20 bg-gray-800 border border-gray-600 text-center rounded text-white py-1 outline-none text-sm">
                 </div>
                 <div class="flex justify-between items-center bg-gray-900 p-3 rounded-lg border border-gray-700">
                     <span class="text-sm font-semibold text-red-400">Stop Loss $</span>
-                    <input type="number" id="input-sl" value="20" class="w-20 bg-gray-800 border border-gray-600 text-center rounded text-white py-1 outline-none">
+                    <input type="number" id="input-sl" value="20" class="w-20 bg-gray-800 border border-gray-600 text-center rounded text-white py-1 outline-none text-sm">
                 </div>
             </div>
             
-            <button onclick="salvarConfiguracoes()" class="w-full mt-6 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg transition">
+            <button onclick="salvarConfiguracoes()" class="w-full mt-6 bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-lg transition shadow-lg">
                 ATUALIZAR MOTOR
             </button>
         </div>
     </div>
 
+    <!-- SCRIPT -->
     <script>
         let ws_python = null;
         let wakeLock = null;
+        let modoAutomatico = false;
+
+        async function travarTela() {
+            try {
+                if ('wakeLock' in navigator) { wakeLock = await navigator.wakeLock.request('screen'); }
+            } catch (err) {}
+        }
 
         async function conectarBot() {
             const token = document.getElementById('api-token').value;
@@ -137,11 +154,8 @@
             document.getElementById('main-screen').classList.remove('hidden');
             document.getElementById('main-screen').classList.add('flex');
 
-            try {
-                if ('wakeLock' in navigator) { wakeLock = await navigator.wakeLock.request('screen'); }
-            } catch (err) {}
+            travarTela();
 
-            // CONEXÃO DINÂMICA: Descobre sozinho se está no Render ou Replit
             const protocolo = window.location.protocol === "https:" ? "wss://" : "ws://";
             const ws_url = protocolo + window.location.host + "/painel";
             
@@ -149,30 +163,44 @@
 
             ws_python.onopen = () => {
                 ws_python.send(JSON.stringify({ 
-                    tipo: "iniciar", 
-                    token: token,
-                    ativo: document.getElementById('input-ativo').value 
+                    tipo: "iniciar", token: token, ativo: document.getElementById('input-ativo').value 
                 }));
             };
 
             ws_python.onmessage = (event) => {
                 const dados = JSON.parse(event.data);
-                if(dados.tipo === "log") { addLog(dados.fonte, dados.mensagem, dados.cor); }
+                
+                // ATUALIZA O TEXTO DO NARRADOR
+                if(dados.tipo === "log") { 
+                    addLog(dados.fonte, dados.mensagem, dados.cor); 
+                }
+                
+                // ATUALIZA O SALDO NA TELA
+                if(dados.tipo === "saldo") {
+                    document.getElementById('saldo-display').innerText = '$' + dados.valor;
+                    document.getElementById('saldo-display-mobile').innerText = '$' + dados.valor;
+                }
             };
         }
 
         function toggleAutoMode() {
-            const modoAutomatico = document.getElementById('auto-toggle').checked;
-            const statusText = document.getElementById('auto-status-text');
+            modoAutomatico = !modoAutomatico;
+            const btnPower = document.getElementById('btn-power');
+            const powerText = document.getElementById('power-text');
+            const powerSub = document.getElementById('power-sub');
             const statsPanel = document.getElementById('stats-panel');
 
             if(modoAutomatico) {
-                statusText.innerText = "Ligado (Executando Ordens)";
-                statusText.className = "text-xs text-green-400 font-bold";
+                btnPower.className = "w-full bg-green-600 border border-green-500 hover:bg-green-700 text-white font-black tracking-widest py-4 rounded-xl transition-all flex flex-col items-center justify-center shrink-0 shadow-[0_0_15px_rgba(16,185,129,0.4)]";
+                powerText.innerHTML = "⛔ PARAR TRADING";
+                powerSub.innerHTML = "Status: Executando ordens reais na corretora";
+                powerSub.className = "text-[10px] text-green-100 font-bold mt-1";
                 statsPanel.classList.remove('hidden');
             } else {
-                statusText.innerText = "Desligado (Apenas Sinais)";
-                statusText.className = "text-xs text-yellow-500";
+                btnPower.className = "w-full bg-gray-700 border border-gray-600 hover:bg-gray-600 text-white font-black tracking-widest py-4 rounded-xl transition-all flex flex-col items-center justify-center shrink-0 shadow-lg";
+                powerText.innerHTML = "▶ INICIAR TRADING";
+                powerSub.innerHTML = "Status: Apenas analisando o mercado";
+                powerSub.className = "text-[10px] text-gray-400 font-normal mt-1";
                 statsPanel.classList.add('hidden');
             }
 
@@ -193,18 +221,33 @@
             toggleSettings();
         }
 
-        function toggleMenu() { document.getElementById('side-menu').classList.toggle('-translate-x-full'); }
+        function toggleMenu() { 
+            const menu = document.getElementById('side-menu');
+            const overlay = document.getElementById('menu-overlay');
+            if (menu.classList.contains('-translate-x-full')) {
+                menu.classList.remove('-translate-x-full');
+                overlay.classList.remove('hidden');
+            } else {
+                menu.classList.add('-translate-x-full');
+                overlay.classList.add('hidden');
+            }
+        }
+
         function toggleSettings() { document.getElementById('settings-modal').classList.toggle('hidden'); }
 
         function addLog(fonte, mensagem, cor) {
             const logBox = document.getElementById('ai-log');
             const time = new Date().toLocaleTimeString('pt-BR', { hour12: false });
             const p = document.createElement('div');
-            p.className = `text-[11px] leading-relaxed border-b border-gray-800 pb-1 mb-1 ${cor}`;
+            p.className = `text-[11px] leading-relaxed border-b border-gray-800 pb-2 mb-2 ${cor}`;
             p.innerHTML = `<span class="text-gray-500">[${time}]</span> <strong class="text-blue-500">${fonte}:</strong> ${mensagem}`;
             logBox.appendChild(p);
             logBox.scrollTop = logBox.scrollHeight;
         }
+
+        document.addEventListener('visibilitychange', async () => {
+            if (wakeLock !== null && document.visibilityState === 'visible') { travarTela(); }
+        });
     </script>
 </body>
 </html>
