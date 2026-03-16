@@ -78,6 +78,7 @@ async def websocket_painel(websocket: WebSocket):
     await websocket.accept()
     conexoes_html.append(websocket)
     
+    # Envia estatísticas atuais ao conectar
     await enviar_estatisticas()
     
     try:
@@ -114,7 +115,7 @@ async def websocket_painel(websocket: WebSocket):
         conexoes_html.remove(websocket)
 
 # ==========================================
-# 4. MOTOR WEBSOCKET DA DERIV
+# 4. MOTOR WEBSOCKET DA DERIV (COM DETETIVE DE ERRO)
 # ==========================================
 async def motor_deriv_ws():
     async with websockets.connect(DERIV_WS_URL) as ws_deriv:
@@ -142,13 +143,25 @@ async def motor_deriv_ws():
             
             mensagem = json.loads(await ws_deriv.recv())
             
+            # ==================================================
+            # DETETIVE: CAPTURA QUALQUER ERRO DA CORRETORA AQUI!
+            # ==================================================
+            if "error" in mensagem:
+                erro_msg = mensagem["error"]["message"]
+                await enviar_log_html(f"❌ ERRO DA CORRETORA: {erro_msg}", cor="text-red-500 font-bold")
+                estado_bot["em_operacao"] = False # Destrava o robô se a ordem falhar
+                continue
+
+            # Atualiza saldo
             if "balance" in mensagem:
                 await enviar_saldo(mensagem["balance"]["balance"])
             
+            # Carrega histórico inicial
             elif "candles" in mensagem:
                 estado_bot["velas"] = mensagem["candles"]
                 await enviar_log_html("1.000 velas processadas. Iniciando análise de mercado...", cor="text-blue-400")
                 
+            # Atualiza velas ao vivo
             elif "ohlc" in mensagem:
                 vela = mensagem["ohlc"]
                 if estado_bot["velas"] and estado_bot["velas"][-1]["epoch"] == int(vela["open_time"]):
@@ -161,13 +174,10 @@ async def motor_deriv_ws():
 
             # RASTREANDO O RESULTADO DA OPERAÇÃO
             elif "buy" in mensagem:
-                if "error" not in mensagem:
-                    contract_id = mensagem["buy"]["contract_id"]
-                    # Pede para a Deriv avisar quando esse contrato fechar
-                    await ws_deriv.send(json.dumps({"proposal_open_contract": 1, "contract_id": contract_id, "subscribe": 1}))
-                else:
-                    await enviar_log_html(f"Erro ao comprar: {mensagem['error']['message']}", cor="text-red-500")
-                    estado_bot["em_operacao"] = False
+                contract_id = mensagem["buy"]["contract_id"]
+                await enviar_log_html(f"Ordem aceita! ID: {contract_id}. Monitorando o fechamento...", cor="text-green-300")
+                # Pede para a Deriv avisar quando esse contrato fechar
+                await ws_deriv.send(json.dumps({"proposal_open_contract": 1, "contract_id": contract_id, "subscribe": 1}))
                 
             elif "proposal_open_contract" in mensagem:
                 contrato = mensagem["proposal_open_contract"]
@@ -200,6 +210,7 @@ async def analisar_mercado_avancado(ws_deriv):
     preco_atual = df.iloc[-1]['close']
     tempo_atual = df.iloc[-1]['epoch']
     
+    # Cálculos Matemáticos
     df['EMA_9'] = df['close'].ewm(span=9, adjust=False).mean()
     delta = df['close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
@@ -216,6 +227,7 @@ async def analisar_mercado_avancado(ws_deriv):
     vela_ant2 = df.iloc[-3]
     nova_vela_fechou = tempo_atual != estado_bot["ultima_vela_narrada"]
     
+    # Procurando Order Block
     if estado_bot["order_block"] is None:
         for i in range(len(df)-10, 50, -1):
             if df['close'].iloc[i] > df['open'].iloc[i] and df['close'].iloc[i-1] > df['open'].iloc[i-1]:
@@ -227,6 +239,7 @@ async def analisar_mercado_avancado(ws_deriv):
         if nova_vela_fechou and estado_bot["order_block"] is None:
             await enviar_log_html(f"📊 Preço: {preco_atual:.2f} | Aguardando estrutura de mercado (OB)...", cor="text-gray-500")
 
+    # Monitorando o Preço no Order Block
     if estado_bot["order_block"]:
         ob = estado_bot["order_block"]
         if preco_atual > (ob["maxima"] * 1.002):
@@ -236,6 +249,7 @@ async def analisar_mercado_avancado(ws_deriv):
         elif ob["minima"] <= preco_atual <= (ob["maxima"] * 1.002):
             await enviar_log_html(f"⚠️ ALERTA: O Preço entrou na Zona do Banco (Order Block)!", cor="text-yellow-400 font-bold")
             
+            # Verificando Filtros
             if vela_atual['RSI'] < 40 and vela_atual['MACD'] > vela_atual['Signal']:
                 await enviar_log_html(f"⏳ Exaustão confirmada (RSI {vela_atual['RSI']:.0f}). Armando Gatilho...", cor="text-blue-400")
                 
@@ -252,6 +266,9 @@ async def analisar_mercado_avancado(ws_deriv):
 
     estado_bot["ultima_vela_narrada"] = tempo_atual
 
+# ==========================================
+# 6. EXECUÇÃO DA ORDEM
+# ==========================================
 async def executar_ordem(ws_deriv, direcao):
     if estado_bot["lucro_diario"] >= estado_bot["take_profit"]:
         await enviar_log_html(f"🏆 META BATIDA! Bot pausado.", cor="text-green-500 font-black")
@@ -268,13 +285,19 @@ async def executar_ordem(ws_deriv, direcao):
         
     # MODO AUTOMÁTICO (Trava o robô e atira)
     estado_bot["em_operacao"] = True
-    await enviar_log_html(f"💸 EXECUTANDO ORDEM: {direcao} a ${estado_bot['stake']}!", cor="text-green-500 font-bold")
+    await enviar_log_html(f"💸 ENVIANDO ORDEM PRA DERIV: {direcao} a ${estado_bot['stake']}!", cor="text-green-500 font-bold")
     
     ordem = {
-        "buy": 1, "price": estado_bot["stake"],
+        "buy": 1, 
+        "price": estado_bot["stake"],
         "parameters": {
-            "amount": estado_bot["stake"], "basis": "stake", "contract_type": direcao,
-            "currency": "USD", "duration": 1, "duration_unit": "m", "symbol": estado_bot["ativo"]
+            "amount": estado_bot["stake"], 
+            "basis": "stake", 
+            "contract_type": direcao,
+            "currency": "USD", 
+            "duration": 1, 
+            "duration_unit": "m", 
+            "symbol": estado_bot["ativo"]
         }
     }
     await ws_deriv.send(json.dumps(ordem))
