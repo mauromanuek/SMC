@@ -29,8 +29,12 @@ class DerivBot:
         self.losses_in_row = 0
         self.balance = 0.0
         self.total_profit = 0.0
+        
+        # Estatísticas
         self.trades_count = 0
         self.wins = 0
+        self.losses = 0
+        
         self.reanalyzing = False
         
         # Gestão de Risco Padrão
@@ -97,14 +101,15 @@ class DerivBot:
             if self.token: await self.connect_deriv(self.token)
 
     def _process_tick(self, price):
-        str_price = f"{float(price):.5f}"
+        # CORREÇÃO: R_100 tem exatamente 2 casas decimais.
+        # Formatamos para .2f para extrair o dígito real da Deriv.
+        str_price = f"{float(price):.2f}"
         last_digit = str_price[-1]
         
         self.ticks.append(last_digit)
         if len(self.ticks) > 25:
             self.ticks.pop(0)
             
-        # Envia a lista de ticks para desenhar os círculos no frontend
         asyncio.create_task(self._send_to_frontend({"type": "ticks_update", "ticks": self.ticks}))
 
     async def check_strategy(self):
@@ -113,7 +118,6 @@ class DerivBot:
 
         if len(self.ticks) < 25: return
 
-        # Conta quantos 9 existem nos últimos 25 ticks
         count_9 = self.ticks.count('9')
         perc_9 = (count_9 / 25) * 100
 
@@ -156,7 +160,12 @@ class DerivBot:
 
         self.total_profit += profit
         self.trades_count += 1
-        if is_win: self.wins += 1
+        
+        # Contadores Separados
+        if is_win: 
+            self.wins += 1
+        else:
+            self.losses += 1
 
         trade_data = {
             "type": contract["contract_type"],
@@ -186,7 +195,6 @@ class DerivBot:
                 else:
                     self.bot_status = "ANALYZING"
 
-        # Garante que o status mude rapidinho na barra de progresso do frontend
         await self._send_to_frontend({"type": "status_update", "status": "CLOSED_CONTRACT"})
         await asyncio.sleep(1)
         await self._update_frontend_dashboard()
@@ -206,6 +214,7 @@ class DerivBot:
             "profit": self.total_profit,
             "trades": self.trades_count,
             "wins": self.wins,
+            "losses": self.losses,
             "status": self.bot_status
         })
 
@@ -236,6 +245,14 @@ async def websocket_endpoint(websocket: WebSocket):
             elif command == "pause" or command == "stop":
                 bot.running = False
                 bot.bot_status = "STOPPED" if command == "stop" else "PAUSED"
+                await bot._update_frontend_dashboard()
+
+            elif command == "reset_stats":
+                bot.total_profit = 0.0
+                bot.trades_count = 0
+                bot.wins = 0
+                bot.losses = 0
+                bot.losses_in_row = 0
                 await bot._update_frontend_dashboard()
 
             elif command == "update_settings":
