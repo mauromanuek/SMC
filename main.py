@@ -22,8 +22,9 @@ estado_bot = {
     "take_profit": 50.0,
     "stop_loss": 20.0,
     
-    # ESTATÍSTICAS E TRAVA
-    "em_operacao": False, # Trava de segurança contra tiros duplos
+    # ESTATÍSTICAS E TRAVAS DE SEGURANÇA
+    "em_operacao": False,       # Impede de abrir 2 ordens juntas
+    "pedindo_velas": False,     # Impede SPAM no WebSocket (Banimento)
     "lucro_diario": 0.0,
     "wins": 0,
     "losses": 0,
@@ -78,7 +79,6 @@ async def websocket_painel(websocket: WebSocket):
     await websocket.accept()
     conexoes_html.append(websocket)
     
-    # Envia estatísticas atuais ao conectar
     await enviar_estatisticas()
     
     try:
@@ -104,6 +104,7 @@ async def websocket_painel(websocket: WebSocket):
                     estado_bot["ativo"] = comando["ativo"]
                     estado_bot["velas"] = [] 
                     estado_bot["order_block"] = None
+                    estado_bot["pedindo_velas"] = False
                     await enviar_log_html(f"Trocando radar para {estado_bot['ativo']}...", cor="text-yellow-400")
                 
                 estado_bot["stake"] = comando["stake"]
@@ -115,10 +116,11 @@ async def websocket_painel(websocket: WebSocket):
         conexoes_html.remove(websocket)
 
 # ==========================================
-# 4. MOTOR WEBSOCKET DA DERIV (COM DETETIVE DE ERRO)
+# 4. MOTOR WEBSOCKET DA DERIV
 # ==========================================
 async def motor_deriv_ws():
     async with websockets.connect(DERIV_WS_URL) as ws_deriv:
+        # Autorização
         await ws_deriv.send(json.dumps({"authorize": estado_bot["token_deriv"]}))
         resp_auth = json.loads(await ws_deriv.recv())
         
@@ -127,6 +129,9 @@ async def motor_deriv_ws():
             return
             
         await ws_deriv.send(json.dumps({"balance": 1, "subscribe": 1}))
+        
+        # Pede histórico inicial
+        estado_bot["pedindo_velas"] = True
         await ws_deriv.send(json.dumps({
             "ticks_history": estado_bot["ativo"], "adjust_start_time": 1,
             "count": 1000, "end": "latest", "style": "candles",
@@ -134,7 +139,9 @@ async def motor_deriv_ws():
         }))
 
         while True:
-            if not estado_bot["velas"]:
+            # Proteção contra Loop Infinito / SPAM de WebSockets
+            if not estado_bot["velas"] and not estado_bot["pedindo_velas"]:
+                estado_bot["pedindo_velas"] = True
                 await ws_deriv.send(json.dumps({
                     "ticks_history": estado_bot["ativo"], "adjust_start_time": 1,
                     "count": 1000, "end": "latest", "style": "candles",
@@ -144,24 +151,25 @@ async def motor_deriv_ws():
             mensagem = json.loads(await ws_deriv.recv())
             
             # ==================================================
-            # DETETIVE: CAPTURA QUALQUER ERRO DA CORRETORA AQUI!
+            # DETETIVE DE ERROS: DESTRAVA O ROBÔ SE A API NEGAR A ORDEM
             # ==================================================
             if "error" in mensagem:
                 erro_msg = mensagem["error"]["message"]
                 await enviar_log_html(f"❌ ERRO DA CORRETORA: {erro_msg}", cor="text-red-500 font-bold")
-                estado_bot["em_operacao"] = False # Destrava o robô se a ordem falhar
+                estado_bot["em_operacao"] = False # DESTRAVA O ROBÔ
+                estado_bot["order_block"] = None  # Reseta o bloco para recomeçar limpo
                 continue
 
-            # Atualiza saldo
+            # ==================================================
+            
             if "balance" in mensagem:
                 await enviar_saldo(mensagem["balance"]["balance"])
             
-            # Carrega histórico inicial
             elif "candles" in mensagem:
                 estado_bot["velas"] = mensagem["candles"]
+                estado_bot["pedindo_velas"] = False # Recebeu as velas, libera a trava
                 await enviar_log_html("1.000 velas processadas. Iniciando análise de mercado...", cor="text-blue-400")
                 
-            # Atualiza velas ao vivo
             elif "ohlc" in mensagem:
                 vela = mensagem["ohlc"]
                 if estado_bot["velas"] and estado_bot["velas"][-1]["epoch"] == int(vela["open_time"]):
@@ -176,13 +184,11 @@ async def motor_deriv_ws():
             elif "buy" in mensagem:
                 contract_id = mensagem["buy"]["contract_id"]
                 await enviar_log_html(f"Ordem aceita! ID: {contract_id}. Monitorando o fechamento...", cor="text-green-300")
-                # Pede para a Deriv avisar quando esse contrato fechar
                 await ws_deriv.send(json.dumps({"proposal_open_contract": 1, "contract_id": contract_id, "subscribe": 1}))
                 
             elif "proposal_open_contract" in mensagem:
                 contrato = mensagem["proposal_open_contract"]
                 if contrato:
-                    # Se o contrato fechou (Ganhou ou Perdeu)
                     if contrato.get("is_sold") == 1:
                         lucro_final = float(contrato["profit"])
                         
@@ -194,11 +200,11 @@ async def motor_deriv_ws():
                             await enviar_log_html(f"❌ LOSS. Perda de ${abs(lucro_final):.2f}", cor="text-red-400 font-bold")
                             
                         estado_bot["lucro_diario"] += lucro_final
-                        estado_bot["em_operacao"] = False # Destrava o robô para o próximo sinal
+                        estado_bot["em_operacao"] = False # DESTRAVA O ROBÔ AQUI!
                         await enviar_estatisticas()
 
 # ==========================================
-# 5. CÉREBRO: LÓGICA E GATILHO
+# 5. CÉREBRO: LÓGICA DE TIRO (SMC + LARRY)
 # ==========================================
 async def analisar_mercado_avancado(ws_deriv):
     if len(estado_bot["velas"]) < 100: return
@@ -210,7 +216,7 @@ async def analisar_mercado_avancado(ws_deriv):
     preco_atual = df.iloc[-1]['close']
     tempo_atual = df.iloc[-1]['epoch']
     
-    # Cálculos Matemáticos
+    # Cálculos
     df['EMA_9'] = df['close'].ewm(span=9, adjust=False).mean()
     delta = df['close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
@@ -227,7 +233,7 @@ async def analisar_mercado_avancado(ws_deriv):
     vela_ant2 = df.iloc[-3]
     nova_vela_fechou = tempo_atual != estado_bot["ultima_vela_narrada"]
     
-    # Procurando Order Block
+    # PROCURA ORDER BLOCK (BULLISH)
     if estado_bot["order_block"] is None:
         for i in range(len(df)-10, 50, -1):
             if df['close'].iloc[i] > df['open'].iloc[i] and df['close'].iloc[i-1] > df['open'].iloc[i-1]:
@@ -239,20 +245,23 @@ async def analisar_mercado_avancado(ws_deriv):
         if nova_vela_fechou and estado_bot["order_block"] is None:
             await enviar_log_html(f"📊 Preço: {preco_atual:.2f} | Aguardando estrutura de mercado (OB)...", cor="text-gray-500")
 
-    # Monitorando o Preço no Order Block
+    # SE O ORDER BLOCK EXISTE, MONITORAR!
     if estado_bot["order_block"]:
         ob = estado_bot["order_block"]
+        
+        # Longe do OB
         if preco_atual > (ob["maxima"] * 1.002):
             if nova_vela_fechou:
                 await enviar_log_html(f"👀 Observando... Preço ({preco_atual:.2f}) distante da Zona ({ob['maxima']:.2f}).", cor="text-gray-400")
                 
+        # ENTROU NO OB!
         elif ob["minima"] <= preco_atual <= (ob["maxima"] * 1.002):
-            await enviar_log_html(f"⚠️ ALERTA: O Preço entrou na Zona do Banco (Order Block)!", cor="text-yellow-400 font-bold")
             
-            # Verificando Filtros
+            # FILTRO 1: RSI e MACD
             if vela_atual['RSI'] < 40 and vela_atual['MACD'] > vela_atual['Signal']:
-                await enviar_log_html(f"⏳ Exaustão confirmada (RSI {vela_atual['RSI']:.0f}). Armando Gatilho...", cor="text-blue-400")
+                await enviar_log_html(f"⏳ Exaustão confirmada (RSI {vela_atual['RSI']:.0f}). Armando Gatilho Larry 9.1...", cor="text-blue-400")
                 
+                # FILTRO 2: LARRY WILLIAMS 9.1
                 if vela_ant2['EMA_9'] > vela_ant['EMA_9'] and vela_atual['EMA_9'] > vela_ant['EMA_9']:
                     gatilho_compra = vela_ant['high']
                     
@@ -261,8 +270,9 @@ async def analisar_mercado_avancado(ws_deriv):
                         await executar_ordem(ws_deriv, "CALL")
                         estado_bot["order_block"] = None
             else:
+                # Transparência do porquê está demorando
                 if nova_vela_fechou:
-                    await enviar_log_html(f"⛔ Preço na zona, mas indicadores ainda fracos. Protegendo capital...", cor="text-red-400")
+                    await enviar_log_html(f"⛔ Preço na zona OB, mas filtros fracos: RSI={vela_atual['RSI']:.0f} (Precisa <40). Aguardando...", cor="text-yellow-500")
 
     estado_bot["ultima_vela_narrada"] = tempo_atual
 
@@ -277,13 +287,12 @@ async def executar_ordem(ws_deriv, direcao):
         await enviar_log_html(f"🩸 LIMITE DE PERDA ATINGIDO. Segurança ativada.", cor="text-red-500 font-black")
         return
 
-    # SINALIZADOR
     if not estado_bot["modo_automatico"]:
         await enviar_log_html(f"🔔 SINALIZADOR: Oportunidade de {direcao} exata agora! Faça a entrada manualmente na Deriv.", cor="text-yellow-400 font-black")
-        estado_bot["order_block"] = None 
+        estado_bot["order_block"] = None # Reseta o bloco, mas NÃO TRAVA O ROBÔ
         return
         
-    # MODO AUTOMÁTICO (Trava o robô e atira)
+    # TRAVA O ROBÔ PARA NÃO MANDAR OUTRA ORDEM
     estado_bot["em_operacao"] = True
     await enviar_log_html(f"💸 ENVIANDO ORDEM PRA DERIV: {direcao} a ${estado_bot['stake']}!", cor="text-green-500 font-bold")
     
@@ -293,7 +302,7 @@ async def executar_ordem(ws_deriv, direcao):
         "parameters": {
             "amount": estado_bot["stake"], 
             "basis": "stake", 
-            "contract_type": direcao,
+            "contract_type": direcao,  # Aqui vai ser CALL ou PUT
             "currency": "USD", 
             "duration": 1, 
             "duration_unit": "m", 
