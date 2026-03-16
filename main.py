@@ -1,313 +1,265 @@
 import asyncio
 import json
-import pandas as pd
-import websockets
-import os
+import logging
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
-from fastapi.middleware.cors import CORSMiddleware
-import uvicorn
-
-# ==========================================
-# 1. CONFIGURAÇÕES GERAIS
-# ==========================================
-APP_ID = "121512"
-DERIV_WS_URL = f"wss://ws.derivws.com/websockets/v3?app_id={APP_ID}"
-
-estado_bot = {
-    "token_deriv": None,
-    "modo_automatico": False,
-    "ativo": "R_10",
-    "stake": 10.0,
-    "take_profit": 50.0,
-    "stop_loss": 20.0,
-    
-    # ESTATÍSTICAS E TRAVAS
-    "em_operacao": False,       
-    "pedindo_velas": False,     
-    "lucro_diario": 0.0,
-    "wins": 0,
-    "losses": 0,
-    
-    "velas": [],
-    "order_block": None,
-    "ultima_vela_narrada": 0
-}
+import websockets
 
 app = FastAPI()
-app.add_middleware(CORSMiddleware, allow_origins=["*"])
-conexoes_html = []
+logging.basicConfig(level=logging.INFO)
+
+# Variáveis globais do Bot
+APP_ID = 1089 # App ID genérico da Deriv
+SYMBOL = "R_100" # Índice de Volatilidade 100
+STAKE = 1.00
+RECOVERY_STAKE = 2.50
+
+with open("index.html", "r", encoding="utf-8") as f:
+    html_content = f.read()
 
 @app.get("/")
-async def pagina_inicial():
-    caminho_html = os.path.join(os.path.dirname(__file__), "index.html")
-    with open(caminho_html, "r", encoding="utf-8") as f:
-        html_content = f.read()
-    return HTMLResponse(content=html_content, status_code=200)
+async def get():
+    return HTMLResponse(html_content)
 
-# ==========================================
-# 2. COMUNICAÇÃO HTML E PING
-# ==========================================
-async def enviar_log_html(mensagem, fonte="PYTHON", cor="text-gray-300"):
-    pacote = json.dumps({"tipo": "log", "fonte": fonte, "mensagem": mensagem, "cor": cor})
-    for conexao in conexoes_html:
-        try: await conexao.send_text(pacote)
-        except: pass
+class DerivBot:
+    def __init__(self, client_ws: WebSocket):
+        self.client_ws = client_ws
+        self.deriv_ws = None
+        self.token = None
+        self.running = False
+        self.bot_status = "ANALYZING" # ANALYZING, OPEN_CONTRACT, PAUSED
+        self.ticks = []
+        self.stats = {str(i): 0 for i in range(10)}
+        self.losses_in_row = 0
+        self.balance = 0.0
+        self.total_profit = 0.0
+        self.trades_count = 0
+        self.wins = 0
+        self.current_contract_id = None
+        self.reanalyzing = False
 
-async def enviar_saldo(saldo):
-    pacote = json.dumps({"tipo": "saldo", "valor": f"{saldo:.2f}"})
-    for conexao in conexoes_html:
-        try: await conexao.send_text(pacote)
-        except: pass
-
-async def enviar_estatisticas():
-    pacote = {
-        "tipo": "stats",
-        "liquido": f"{estado_bot['lucro_diario']:.2f}",
-        "wins": estado_bot["wins"],
-        "loss": estado_bot["losses"]
-    }
-    for conexao in conexoes_html:
-        try: await conexao.send_text(json.dumps(pacote))
-        except: pass
-
-async def manter_conexao_viva(ws):
-    while True:
-        await asyncio.sleep(25)
-        try: await ws.send(json.dumps({"ping": 1}))
-        except: break
-
-@app.websocket("/painel")
-async def websocket_painel(websocket: WebSocket):
-    await websocket.accept()
-    conexoes_html.append(websocket)
-    await enviar_estatisticas()
-    
-    try:
-        while True:
-            dados = await websocket.receive_text()
-            comando = json.loads(dados)
+    async def connect_deriv(self, token):
+        self.token = token
+        uri = f"wss://ws.binaryws.com/websockets/v3?app_id={APP_ID}"
+        try:
+            self.deriv_ws = await websockets.connect(uri)
+            # Autenticação
+            await self.deriv_ws.send(json.dumps({"authorize": self.token}))
+            auth_response = json.loads(await self.deriv_ws.recv())
             
-            if comando["tipo"] == "iniciar":
-                estado_bot["token_deriv"] = comando["token"]
-                estado_bot["ativo"] = comando["ativo"]
-                await enviar_log_html(f"Motores ligados no ativo {estado_bot['ativo']}...", cor="text-blue-400")
-                asyncio.create_task(motor_deriv_ws())
-                
-            elif comando["tipo"] == "toggle_auto":
-                estado_bot["modo_automatico"] = comando["status"]
-                if estado_bot["modo_automatico"]:
-                    await enviar_log_html("🟢 MODO AUTOMÁTICO ATIVADO. Bot operando na conta.", cor="text-green-400 font-bold")
-                else:
-                    await enviar_log_html("⏸️ MODO AUTOMÁTICO DESLIGADO. Apenas gerando sinais.", cor="text-yellow-400")
-                
-            elif comando["tipo"] == "configs":
-                if estado_bot["ativo"] != comando["ativo"]:
-                    estado_bot["ativo"] = comando["ativo"]
-                    estado_bot["velas"] = [] 
-                    estado_bot["order_block"] = None
-                    estado_bot["pedindo_velas"] = False
-                    await enviar_log_html(f"Trocando radar para {estado_bot['ativo']}...", cor="text-yellow-400")
-                
-                estado_bot["stake"] = comando["stake"]
-                estado_bot["take_profit"] = comando["tp"]
-                estado_bot["stop_loss"] = comando["sl"]
-                await enviar_log_html(f"Risco Configurado: Stake ${estado_bot['stake']} | TP ${estado_bot['take_profit']} | SL ${estado_bot['stop_loss']}", cor="text-purple-400")
+            if "error" in auth_response:
+                await self._send_to_frontend({"type": "auth_error", "msg": auth_response["error"]["message"]})
+                return False
 
-    except WebSocketDisconnect:
-        conexoes_html.remove(websocket)
+            self.balance = auth_response["authorize"]["balance"]
+            await self._update_frontend_dashboard()
+            await self._send_to_frontend({"type": "auth_success"})
+            
+            # Inscrever no saldo em tempo real
+            await self.deriv_ws.send(json.dumps({"balance": 1, "subscribe": 1}))
+            
+            # Pegar últimos 25 ticks
+            await self.deriv_ws.send(json.dumps({"ticks_history": SYMBOL, "end": "latest", "count": 25, "style": "ticks"}))
+            
+            # Inscrever em ticks ao vivo
+            await self.deriv_ws.send(json.dumps({"ticks": SYMBOL, "subscribe": 1}))
 
-# ==========================================
-# 3. MOTOR WEBSOCKET DA DERIV
-# ==========================================
-async def motor_deriv_ws():
-    async with websockets.connect(DERIV_WS_URL) as ws_deriv:
+            # Iniciar loop de escuta da Deriv
+            asyncio.create_task(self.listen_deriv())
+            return True
+
+        except Exception as e:
+            logging.error(f"Erro na conexão Deriv: {e}")
+            await self._send_to_frontend({"type": "auth_error", "msg": "Falha na conexão com a Deriv."})
+            return False
+
+    async def listen_deriv(self):
+        try:
+            async for message in self.deriv_ws:
+                data = json.loads(message)
+                
+                if "error" in data:
+                    logging.error(f"Deriv Error: {data['error']['message']}")
+                    continue
+
+                if data.get("msg_type") == "history":
+                    prices = data["history"]["prices"]
+                    for price in prices:
+                        self._process_tick(price)
+                
+                elif data.get("msg_type") == "tick":
+                    price = data["tick"]["quote"]
+                    self._process_tick(price)
+                    await self.check_strategy()
+
+                elif data.get("msg_type") == "balance":
+                    self.balance = data["balance"]["balance"]
+                    await self._update_frontend_dashboard()
+
+                elif data.get("msg_type") == "proposal_open_contract":
+                    contract = data["proposal_open_contract"]
+                    if contract.get("is_sold"):
+                        await self._handle_contract_closed(contract)
+
+        except websockets.exceptions.ConnectionClosed:
+            logging.info("Deriv WS Closed. Tentando reconectar...")
+            # O bot nunca desliga, tenta reconectar sozinho
+            await asyncio.sleep(3)
+            if self.token:
+                await self.connect_deriv(self.token)
+
+    def _process_tick(self, price):
+        # Pega o último dígito
+        str_price = f"{float(price):.5f}" # Garante casas decimais
+        last_digit = str_price[-1]
         
-        asyncio.create_task(manter_conexao_viva(ws_deriv))
-        
-        await ws_deriv.send(json.dumps({"authorize": estado_bot["token_deriv"]}))
-        resp_auth = json.loads(await ws_deriv.recv())
-        
-        if "error" in resp_auth:
-            await enviar_log_html(f"Erro Token: {resp_auth['error']['message']}", cor="text-red-500")
+        self.ticks.append(last_digit)
+        if len(self.ticks) > 25:
+            self.ticks.pop(0)
+            
+        self._calculate_stats()
+
+    def _calculate_stats(self):
+        if not self.ticks: return
+        counts = {str(i): 0 for i in range(10)}
+        for tick in self.ticks:
+            counts[tick] += 1
+            
+        total = len(self.ticks)
+        self.stats = {k: round((v / total) * 100) for k, v in counts.items()}
+        asyncio.create_task(self._send_to_frontend({"type": "stats", "stats": self.stats}))
+
+    async def check_strategy(self):
+        if not self.running or self.bot_status != "ANALYZING" or self.reanalyzing:
             return
-            
-        await ws_deriv.send(json.dumps({"balance": 1, "subscribe": 1}))
+
+        if len(self.ticks) < 25:
+            return
+
+        # Verifica volatilidade absurda ou perigo repentino (Smart Pause)
+        if self.stats["9"] > 16: # Se o 9 estiver saindo muito, pausa a análise normal
+            self.bot_status = "PAUSED"
+            await self._update_frontend_dashboard()
+            asyncio.create_task(self._pause_and_reanalyze(10))
+            return
+
+        # ESTRATÉGIA PRINCIPAL: Differs 9 (Se 9 estiver 0%)
+        if self.stats["9"] == 0 and self.losses_in_row == 0:
+            await self.execute_trade("DIGITDIFF", 9, STAKE)
+
+        # RECUPERAÇÃO: Over 2
+        elif self.losses_in_row == 1:
+            await self.execute_trade("DIGITOVER", 2, RECOVERY_STAKE)
+
+    async def execute_trade(self, contract_type, prediction, stake):
+        self.bot_status = "OPEN_CONTRACT"
+        await self._update_frontend_dashboard()
         
-        estado_bot["pedindo_velas"] = True
-        await ws_deriv.send(json.dumps({
-            "ticks_history": estado_bot["ativo"], "adjust_start_time": 1,
-            "count": 200, "end": "latest", "style": "candles",
-            "granularity": 60, "subscribe": 1
-        }))
-
-        while True:
-            if not estado_bot["velas"] and not estado_bot["pedindo_velas"]:
-                estado_bot["pedindo_velas"] = True
-                await ws_deriv.send(json.dumps({
-                    "ticks_history": estado_bot["ativo"], "adjust_start_time": 1,
-                    "count": 200, "end": "latest", "style": "candles",
-                    "granularity": 60, "subscribe": 1
-                }))
-            
-            mensagem = json.loads(await ws_deriv.recv())
-            
-            # ----------------------------------------------------
-            # ERRO DA CORRETORA (Impede o bot de ficar travado)
-            # ----------------------------------------------------
-            if "error" in mensagem:
-                erro_msg = mensagem["error"]["message"]
-                await enviar_log_html(f"❌ ERRO DA CORRETORA: {erro_msg}", cor="text-red-500 font-bold")
-                estado_bot["em_operacao"] = False 
-                estado_bot["order_block"] = None  
-                continue
-
-            if "balance" in mensagem:
-                await enviar_saldo(mensagem["balance"]["balance"])
-            
-            elif "candles" in mensagem:
-                estado_bot["velas"] = mensagem["candles"]
-                estado_bot["pedindo_velas"] = False 
-                await enviar_log_html("200 velas processadas. Iniciando análise Otimizada...", cor="text-blue-400")
-                
-            elif "ohlc" in mensagem:
-                vela = mensagem["ohlc"]
-                if estado_bot["velas"] and estado_bot["velas"][-1]["epoch"] == int(vela["open_time"]):
-                    estado_bot["velas"][-1] = { "epoch": int(vela["open_time"]), "open": float(vela["open"]), "high": float(vela["high"]), "low": float(vela["low"]), "close": float(vela["close"]) }
-                else:
-                    estado_bot["velas"].append({ "epoch": int(vela["open_time"]), "open": float(vela["open"]), "high": float(vela["high"]), "low": float(vela["low"]), "close": float(vela["close"]) })
-                    if len(estado_bot["velas"]) > 200: estado_bot["velas"].pop(0)
-
-                await analisar_mercado_avancado(ws_deriv)
-
-            # ----------------------------------------------------
-            # ORDEM ENVIADA! INICIA O RASTREAMENTO DO CONTRATO
-            # ----------------------------------------------------
-            elif "buy" in mensagem:
-                contract_id = mensagem["buy"]["contract_id"]
-                await enviar_log_html(f"✅ Ordem executada! ID: {contract_id}. Rastreiando resultado...", cor="text-green-300")
-                
-                # O Pulo do Gato: Pede para a Deriv informar ao vivo os lucros/perdas deste contrato
-                await ws_deriv.send(json.dumps({
-                    "proposal_open_contract": 1, 
-                    "contract_id": contract_id, 
-                    "subscribe": 1
-                }))
-                
-            # ----------------------------------------------------
-            # CORRETORA ATUALIZANDO O CONTRATO (LUCRO PARCIAL OU FINAL)
-            # ----------------------------------------------------
-            elif "proposal_open_contract" in mensagem:
-                contrato = mensagem["proposal_open_contract"]
-                if contrato:
-                    # Verifica se o contrato FOI VENDIDO (Fechou a expiração de 1 min)
-                    if contrato.get("is_sold") == 1:
-                        lucro_final = float(contrato["profit"])
-                        
-                        if lucro_final > 0:
-                            estado_bot["wins"] += 1
-                            await enviar_log_html(f"🏆 WIN! Contrato finalizado com lucro de +${lucro_final:.2f}", cor="text-green-400 font-bold")
-                        else:
-                            estado_bot["losses"] += 1
-                            await enviar_log_html(f"🩸 LOSS. Contrato finalizado com perda de ${abs(lucro_final):.2f}", cor="text-red-400 font-bold")
-                            
-                        # SOMA NO LÍQUIDO E ATUALIZA AS CAIXINHAS NA TELA!
-                        estado_bot["lucro_diario"] += lucro_final
-                        estado_bot["em_operacao"] = False # DESTRAVA O ROBÔ
-                        await enviar_estatisticas()
-                        
-                    else:
-                        # CONTRATO AINDA ESTÁ ROLANDO: Mostra lucro/perda parcial
-                        lucro_parcial = float(contrato.get("profit", 0))
-                        cor_parcial = "text-green-300" if lucro_parcial >= 0 else "text-red-300"
-                        sinal = "+" if lucro_parcial >= 0 else ""
-                        
-                        # (Apenas imprime no log a cada +- 10 segundos pra não inundar a tela)
-                        # Comente a linha abaixo se achar que polui muito o terminal
-                        # await enviar_log_html(f"⏳ Contrato Rolando... PnL: {sinal}${lucro_parcial:.2f}", cor=cor_parcial)
-
-# ==========================================
-# 4. CÉREBRO OTIMIZADO: SMC + LARRY SIMPLIFICADO
-# ==========================================
-async def analisar_mercado_avancado(ws_deriv):
-    if len(estado_bot["velas"]) < 50: return
-    if estado_bot["em_operacao"]: return
-        
-    df = pd.DataFrame(estado_bot["velas"])
-    preco_atual = df.iloc[-1]['close']
-    tempo_atual = df.iloc[-1]['epoch']
-    
-    df['EMA_9'] = df['close'].ewm(span=9, adjust=False).mean()
-    vela_atual = df.iloc[-1]
-    vela_ant  = df.iloc[-2]
-    nova_vela_fechou = tempo_atual != estado_bot["ultima_vela_narrada"]
-    
-    if nova_vela_fechou and estado_bot["order_block"] is None:
-        for i in range(len(df)-5, 20, -1):
-            if df['close'].iloc[i] > df['open'].iloc[i] and df['close'].iloc[i-1] > df['open'].iloc[i-1]:
-                if df['close'].iloc[i-2] < df['open'].iloc[i-2]:
-                    estado_bot["order_block"] = { "tipo": "BULLISH", "maxima": df['high'].iloc[i-2], "minima": df['low'].iloc[i-2] }
-                    await enviar_log_html(f"📍 OB Identificado: Região {estado_bot['order_block']['minima']:.2f} a {estado_bot['order_block']['maxima']:.2f}.", cor="text-yellow-400 font-bold")
-                    break
-        
-        if estado_bot["order_block"] is None:
-            await enviar_log_html(f"📊 Preço: {preco_atual:.2f} | Aguardando formação de OB...", cor="text-gray-500")
-
-    if estado_bot["order_block"]:
-        ob = estado_bot["order_block"]
-        
-        if preco_atual > (ob["maxima"] * 1.002):
-            if nova_vela_fechou:
-                await enviar_log_html(f"👀 Preço ({preco_atual:.2f}) aguardando retorno à Zona ({ob['maxima']:.2f}).", cor="text-gray-400")
-                
-        elif ob["minima"] <= preco_atual <= (ob["maxima"] * 1.002):
-            if preco_atual > vela_atual['EMA_9'] and vela_ant['close'] <= vela_ant['EMA_9']:
-                await enviar_log_html(f"🔥 SINAL DETECTADO: Preço no OB cruzou a EMA 9!", cor="text-green-400 font-black text-sm")
-                await executar_ordem(ws_deriv, "CALL")
-                estado_bot["order_block"] = None
-            else:
-                if nova_vela_fechou:
-                    await enviar_log_html(f"⚠️ Preço dentro da Zona. Aguardando cruzamento da Média 9...", cor="text-yellow-500")
-
-    if nova_vela_fechou:
-        estado_bot["ultima_vela_narrada"] = tempo_atual
-
-async def executar_ordem(ws_deriv, direcao):
-    if estado_bot["lucro_diario"] >= estado_bot["take_profit"]:
-        await enviar_log_html(f"🏆 META BATIDA! Bot pausado.", cor="text-green-500 font-black")
-        return
-    if estado_bot["lucro_diario"] <= -estado_bot["stop_loss"]:
-        await enviar_log_html(f"🩸 LIMITE DE PERDA ATINGIDO. Segurança ativada.", cor="text-red-500 font-black")
-        return
-
-    if not estado_bot["modo_automatico"]:
-        await enviar_log_html(f"🔔 SINAL: {direcao} agora! (Faça manual na Deriv).", cor="text-yellow-400 font-black")
-        estado_bot["order_block"] = None 
-        return
-        
-    try:
-        estado_bot["em_operacao"] = True
-        await enviar_log_html(f"💸 ENVIANDO ORDEM: {direcao} a ${estado_bot['stake']}!", cor="text-green-500 font-bold")
-        
-        ordem = {
-            "buy": 1, 
-            "price": estado_bot["stake"],
+        # Criação direta da proposta e compra (simplificada)
+        req = {
+            "buy": 1,
+            "price": stake,
             "parameters": {
-                "amount": estado_bot["stake"], 
-                "basis": "stake", 
-                "contract_type": direcao, 
-                "currency": "USD", 
-                "duration": 1, 
-                "duration_unit": "m", 
-                "symbol": estado_bot["ativo"]
+                "amount": stake,
+                "basis": "stake",
+                "contract_type": contract_type,
+                "currency": "USD",
+                "duration": 1,
+                "duration_unit": "t",
+                "symbol": SYMBOL,
+                "barrier": str(prediction)
             }
         }
-        await ws_deriv.send(json.dumps(ordem))
-        
-    except Exception as e:
-        await enviar_log_html(f"❌ ERRO CRÍTICO AO ENVIAR ORDEM: {e}", cor="text-red-500 font-bold")
-        estado_bot["em_operacao"] = False
+        await self.deriv_ws.send(json.dumps(req))
+        # Inscreve para monitorar contratos abertos
+        await self.deriv_ws.send(json.dumps({"proposal_open_contract": 1, "subscribe": 1}))
 
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8000))
-    uvicorn.run("main:app", host="0.0.0.0", port=port)
+    async def _handle_contract_closed(self, contract):
+        self.current_contract_id = None
+        profit = float(contract["profit"])
+        is_win = profit > 0
+
+        self.total_profit += profit
+        self.trades_count += 1
+        if is_win: self.wins += 1
+
+        trade_data = {
+            "type": contract["contract_type"],
+            "tick": contract.get("exit_tick_display_value", "")[-1] if contract.get("exit_tick_display_value") else "-",
+            "stake": contract["buy_price"],
+            "profit": profit
+        }
+        await self._send_to_frontend({"type": "trade_history", "data": trade_data})
+
+        if is_win:
+            self.losses_in_row = 0
+            self.bot_status = "ANALYZING"
+        else:
+            self.losses_in_row += 1
+            if self.losses_in_row >= 2:
+                # Perdeu 2 vezes (Recuperação falhou) - PAUSA
+                self.losses_in_row = 0
+                self.bot_status = "PAUSED"
+                asyncio.create_task(self._pause_and_reanalyze(15))
+            else:
+                self.bot_status = "ANALYZING"
+
+        await self._update_frontend_dashboard()
+
+    async def _pause_and_reanalyze(self, seconds):
+        self.reanalyzing = True
+        await asyncio.sleep(seconds)
+        self.reanalyzing = False
+        if self.running:
+            self.bot_status = "ANALYZING"
+            await self._update_frontend_dashboard()
+
+    async def _update_frontend_dashboard(self):
+        await self._send_to_frontend({
+            "type": "dashboard",
+            "balance": self.balance,
+            "profit": self.total_profit,
+            "trades": self.trades_count,
+            "wins": self.wins,
+            "status": self.bot_status,
+            "recovery": self.losses_in_row > 0
+        })
+
+    async def _send_to_frontend(self, data):
+        try:
+            await self.client_ws.send_json(data)
+        except:
+            pass
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    bot = DerivBot(websocket)
+    
+    try:
+        while True:
+            data = await websocket.receive_json()
+            command = data.get("action")
+            
+            if command == "connect":
+                await bot.connect_deriv(data.get("token"))
+            
+            elif command == "start":
+                bot.running = True
+                bot.bot_status = "ANALYZING"
+                await bot._update_frontend_dashboard()
+                
+            elif command == "pause":
+                bot.running = False
+                bot.bot_status = "PAUSED"
+                await bot._update_frontend_dashboard()
+
+            elif command == "stop":
+                bot.running = False
+                bot.bot_status = "STOPPED"
+                bot.losses_in_row = 0
+                await bot._update_frontend_dashboard()
+
+    except WebSocketDisconnect:
+        bot.running = False
+        logging.info("Client disconnected")
