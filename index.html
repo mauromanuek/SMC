@@ -134,7 +134,11 @@
                 <div class="label">Profit/Loss</div>
                 <div class="value profit-value" id="val-profit">$ 0.00</div>
             </div>
-            <div class="trades-count">TRADES <span id="val-wins" style="color:var(--green)">0</span> / <span id="val-trades">0</span></div>
+            <div class="trades-count">
+                <span style="color:var(--text-muted)">W:</span> <span id="val-wins" style="color:var(--green); font-size:14px;">0</span> 
+                &nbsp;|&nbsp; 
+                <span style="color:var(--text-muted)">L:</span> <span id="val-losses" style="color:var(--red); font-size:14px;">0</span>
+            </div>
         </div>
 
         <div class="selectors">
@@ -186,7 +190,8 @@
         <div class="tabs">
             <div class="tab active">TRADER</div>
             <div class="tab">NOTIFICAÇÕES (0)</div>
-            <div style="padding:10px; cursor:pointer;" onclick="document.getElementById('history-body').innerHTML=''"><i class="fa-solid fa-trash" style="color:var(--text-muted)"></i></div>
+            <!-- Botão de Limpar (Lixeira) -->
+            <div style="padding:10px; cursor:pointer;" onclick="resetStats()"><i class="fa-solid fa-trash" style="color:var(--text-muted)"></i></div>
         </div>
 
         <table class="history-table">
@@ -275,16 +280,16 @@
             profitEl.innerText = `${sign}${Math.abs(data.profit).toFixed(2)}`;
             profitEl.className = 'value profit-value ' + (data.profit >= 0 ? '' : 'negative');
             
-            document.getElementById('val-trades').innerText = data.trades;
+            // Atualiza os contadores Win (W) e Loss (L) separadamente
             document.getElementById('val-wins').innerText = data.wins;
+            document.getElementById('val-losses').innerText = data.losses;
 
             updateStatusBar(data.status);
 
-            // Verifica se o backend parou o bot sozinho (ex: bateu a meta)
             if(data.status.includes("STOPPED")) {
                 isRunning = false;
                 updatePlayButtonUI();
-                if(data.status !== "STOPPED") alert(data.status); // Exibe alerta de Meta Batida ou Stop Loss
+                if(data.status !== "STOPPED") alert(data.status); 
             }
         }
 
@@ -296,7 +301,6 @@
                 document.getElementById('last-digit-text').innerText = ticks[ticks.length - 1];
             }
 
-            // Cria os círculos na tela (Últimos 25)
             ticks.forEach(tick => {
                 const div = document.createElement('div');
                 div.className = `digit-circle ${tick === '9' ? 'nine' : ''}`;
@@ -334,14 +338,13 @@
             } else {
                 btn.classList.remove('playing');
                 icon.className = 'fa-solid fa-play';
-                updateStatusBar("IDLE"); // Limpa a barra
+                updateStatusBar("IDLE");
             }
         }
 
         function addTradeToHistory(trade) {
             const tbody = document.getElementById('history-body');
             
-            // Remove o "No trades yet" na primeira entrada
             if(tbody.innerHTML.includes("No trades yet")) tbody.innerHTML = '';
 
             const row = document.createElement('tr');
@@ -358,14 +361,19 @@
             if(tbody.children.length > 50) tbody.lastChild.remove();
         }
 
-        // Funções do Modal de Configuração (Engrenagem)
-        function openSettings() {
-            document.getElementById('settings-modal').style.display = 'flex';
+        // Função do Botão Lixeira
+        function resetStats() {
+            // Limpa a tabela HTML
+            document.getElementById('history-body').innerHTML = '<tr><td colspan="4" style="text-align:center; color:var(--text-muted); padding:20px;">No trades yet</td></tr>';
+            
+            // Envia comando pro Backend zerar o Lucro, Wins e Losses
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ action: 'reset_stats' }));
+            }
         }
 
-        function closeSettings() {
-            document.getElementById('settings-modal').style.display = 'none';
-        }
+        function openSettings() { document.getElementById('settings-modal').style.display = 'flex'; }
+        function closeSettings() { document.getElementById('settings-modal').style.display = 'none'; }
 
         function saveSettings() {
             if (ws && ws.readyState === WebSocket.OPEN) {
