@@ -11,7 +11,6 @@ logging.basicConfig(level=logging.INFO)
 APP_ID = 1089 
 SYMBOL = "R_100" 
 
-# Carrega o HTML do Frontend
 with open("index.html", "r", encoding="utf-8") as f:
     html_content = f.read()
 
@@ -25,8 +24,12 @@ class DerivBot:
         self.deriv_ws = None
         self.token = None
         self.running = False
+        self.auto_mode = False # NOVO: Controle de Modo Automático / Manual
         self.bot_status = "ANALYZING"
-        self.ticks = [] 
+        
+        self.ticks = [] # Armazena os dígitos (0-9)
+        self.raw_prices = [] # NOVO: Armazena os preços reais para a estratégia Rise/Fall
+        
         self.losses_in_row = 0
         self.balance = 0.0
         self.total_profit = 0.0
@@ -37,18 +40,18 @@ class DerivBot:
         
         self.reanalyzing = False
         
-        # Variável da Estratégia Ativa
-        self.strategy = "MEGATRON" # Opções: "MEGATRON" ou "LOUCO"
-        
-        # Controle de Lote (Para abrir múltiplos contratos simultâneos na estratégia Louco)
-        self.pending_contracts = 0
-        self.current_batch_profit = 0.0
+        # Estratégia Ativa
+        self.strategy = "MEGATRON" # Opções: MEGATRON, LOUCO, HALIKINA, FLASH
         
         # Gestão de Risco Padrão
         self.stake = 1.00
         self.recovery_stake = 2.50
         self.stop_loss = 10.00
         self.take_profit = 10.00
+        
+        # NOVO: Configurações exclusivas da Estratégia Louco (Rise/Fall)
+        self.louco_duration_unit = "t" # "t" (ticks) ou "m" (minutos)
+        self.louco_duration_value = 1  # 1 a 5
 
     async def connect_deriv(self, token):
         self.token = token
@@ -104,214 +107,195 @@ class DerivBot:
                         await self._handle_contract_closed(contract)
 
         except websockets.exceptions.ConnectionClosed:
-            logging.warning("Conexão perdida. Tentando reconectar...")
             await asyncio.sleep(3)
             if self.token: await self.connect_deriv(self.token)
 
     def _process_tick(self, price):
+        # Para a estratégia antiga (Dígitos)
         str_price = f"{float(price):.2f}"
         last_digit = str_price[-1] 
-        
         self.ticks.append(last_digit)
-        if len(self.ticks) > 25:
-            self.ticks.pop(0)
+        if len(self.ticks) > 25: self.ticks.pop(0)
+            
+        # Para a nova estratégia (Rise/Fall)
+        self.raw_prices.append(float(price))
+        if len(self.raw_prices) > 25: self.raw_prices.pop(0)
             
         asyncio.create_task(self._send_to_frontend({"type": "ticks_update", "ticks": self.ticks}))
 
-    def _analyze_digits(self):
-        if len(self.ticks) < 25:
-            return None
-
-        # Frequência dos dígitos
-        counts = {str(i): 0 for i in range(10)}
-        for tick in self.ticks:
-            counts[tick] += 1
-            
-        percentages = {k: (v / 25) * 100 for k, v in counts.items()}
-
-        # Delays
+    # MATEMÁTICA ESTRATÉGIA: MEGATRON (DÍGITOS)
+    def _analyze_megatron(self):
+        if len(self.ticks) < 25: return None
+        percentages = {str(i): (self.ticks.count(str(i)) / 25) * 100 for i in range(10)}
+        
         delay_9 = 0
         for tick in reversed(self.ticks):
             if tick == '9': break
             delay_9 += 1
-            
-        delay_0 = 0
-        for tick in reversed(self.ticks):
-            if tick == '0': break
-            delay_0 += 1
 
-        # Detectores de Cluster em 10 ticks
-        last_10_ticks = self.ticks[-10:]
-        cluster_megatron = last_10_ticks.count('9') >= 3
-        cluster_louco = (last_10_ticks.count('9') + last_10_ticks.count('0')) >= 3
+        cluster_megatron = self.ticks[-10:].count('9') >= 3
+        score = 0
+        if percentages['9'] < 10: score += 1
+        if 2 <= delay_9 <= 5: score += 1
+        if '9' not in self.ticks[-3:]: score += 1
+        if self.ticks[-12:].count('9') <= 1: score += 1
 
-        # Variáveis auxiliares
-        last_3_ticks = self.ticks[-3:]
-        last_12_ticks = self.ticks[-12:]
-        perc_9 = percentages['9']
-        perc_0 = percentages['0']
+        return {"cluster": cluster_megatron, "score": score, "perc_9": percentages['9']}
 
-        # Score MEGATRON
-        score_megatron = 0
-        if perc_9 < 10: score_megatron += 1
-        if 2 <= delay_9 <= 5: score_megatron += 1
-        if '9' not in last_3_ticks: score_megatron += 1
-        if last_12_ticks.count('9') <= 1: score_megatron += 1
+    # MATEMÁTICA ESTRATÉGIA: LOUCO (RISE/FALL)
+    def _analyze_louco(self):
+        if len(self.raw_prices) < 10: return None
+        
+        # Calcula a direção dos movimentos (UP, DOWN, FLAT)
+        movements = []
+        for i in range(1, len(self.raw_prices)):
+            if self.raw_prices[i] > self.raw_prices[i-1]: movements.append("UP")
+            elif self.raw_prices[i] < self.raw_prices[i-1]: movements.append("DOWN")
+            else: movements.append("FLAT")
 
-        # Score LOUCO
-        score_louco = 0
-        if perc_0 < 10: score_louco += 1
-        if perc_9 < 10: score_louco += 1
-        if '0' not in last_3_ticks and '9' not in last_3_ticks: score_louco += 1
-        if 2 <= delay_0 <= 5: score_louco += 1
-        if 2 <= delay_9 <= 5: score_louco += 1
+        last_5 = movements[-5:]
+        last_4 = movements[-4:]
+        last_3 = movements[-3:]
 
-        return {
-            "cluster_megatron": cluster_megatron,
-            "cluster_louco": cluster_louco,
-            "score_megatron": score_megatron,
-            "score_louco": score_louco,
-            "perc_9": perc_9,
-            "perc_0": perc_0
-        }
+        # Filtro de Segurança 1: 5 movimentos na mesma direção (Exaustão/Reversão)
+        if len(set(last_5)) == 1 and last_5[0] != "FLAT": return None 
+
+        # Filtro de Segurança 2: Mercado completamente lateralizado (Alternando)
+        is_alternating = (last_4 == ["UP", "DOWN", "UP", "DOWN"] or last_4 == ["DOWN", "UP", "DOWN", "UP"])
+        
+        # Identifica Micro Tendência
+        is_up_trend = all(m == "UP" for m in last_3)
+        is_down_trend = all(m == "DOWN" for m in last_3)
+
+        # Sistema de Score Louco
+        score = 0
+        if is_up_trend or is_down_trend: score += 2 # 3 mov iguais
+        if not is_alternating: score += 1           # Sem alternância
+        if "FLAT" not in last_5: score += 1         # Consistência limpa
+        
+        if score >= 3:
+            return "CALL" if is_up_trend else "PUT"
+        
+        return None
 
     async def check_strategy(self):
-        if not self.running or self.bot_status != "ANALYZING" or self.reanalyzing:
+        # SÓ OPERA SE O MODO AUTOMÁTICO ESTIVER LIGADO
+        if not self.running or not self.auto_mode or self.bot_status != "ANALYZING" or self.reanalyzing:
             return
 
-        analysis = self._analyze_digits()
-        if not analysis: return
-
         # ==========================================
-        # ESTRATÉGIA: MEGATRON (DIFFERS 9)
+        # 1. ESTRATÉGIA: MEGATRON (DIFFERS 9)
         # ==========================================
         if self.strategy == "MEGATRON":
-            if analysis["cluster_megatron"]:
+            analysis = self._analyze_megatron()
+            if not analysis: return
+
+            if analysis["cluster"]:
                 self.bot_status = "PAUSED"
-                await self._update_frontend_dashboard()
                 asyncio.create_task(self._pause_and_reanalyze(10))
                 return
 
             if self.losses_in_row == 0:
-                fast_entry = (analysis["perc_9"] == 0)
-                sniper_entry = (analysis["score_megatron"] >= 3)
-                
-                if fast_entry or sniper_entry:
-                    await self.execute_trade("DIGITDIFF", 9, self.stake)
-
+                if analysis["perc_9"] == 0 or analysis["score"] >= 3:
+                    await self.execute_trade("DIGITDIFF", 9, self.stake, 1, "t")
             elif self.losses_in_row == 1:
-                await self.execute_trade("DIGITOVER", 2, self.recovery_stake)
+                await self.execute_trade("DIGITOVER", 2, self.recovery_stake, 1, "t")
 
         # ==========================================
-        # ESTRATÉGIA: LOUCO (EVITA 0 E 9)
+        # 2. ESTRATÉGIA: LOUCO (RISE/FALL)
         # ==========================================
         elif self.strategy == "LOUCO":
-            if analysis["cluster_louco"]:
-                self.bot_status = "PAUSED"
-                await self._update_frontend_dashboard()
-                asyncio.create_task(self._pause_and_reanalyze(10))
-                return
-
             if self.losses_in_row == 0:
-                base_condition = (analysis["perc_0"] < 10 and analysis["perc_9"] < 10)
-                if base_condition and analysis["score_louco"] >= 4:
-                    await self.execute_louco_trade(self.stake)
-
+                direction = self._analyze_louco()
+                if direction: # CALL ou PUT
+                    await self.execute_trade(direction, None, self.stake, self.louco_duration_value, self.louco_duration_unit)
             elif self.losses_in_row == 1:
-                await self.execute_trade("DIGITOVER", 2, self.recovery_stake)
+                # Recuperação da Louco (Híbrida: usa dígitos para recuperar)
+                await self.execute_trade("DIGITOVER", 2, self.recovery_stake, 1, "t")
 
+        # As estratégias HALIKINA e FLASH apenas existem no menu por enquanto
+        elif self.strategy in ["HALIKINA", "FLASH"]:
+            pass
 
-    async def execute_trade(self, contract_type, prediction, stake):
+    async def execute_trade(self, contract_type, barrier, stake, duration, duration_unit):
         self.bot_status = "OPEN_CONTRACT"
-        self.pending_contracts = 1
-        self.current_batch_profit = 0.0
         await self._update_frontend_dashboard()
         
-        req = {
-            "buy": 1, "price": stake,
-            "parameters": { "amount": stake, "basis": "stake", "contract_type": contract_type, "currency": "USD", "duration": 1, "duration_unit": "t", "symbol": SYMBOL, "barrier": str(prediction) }
+        params = {
+            "amount": stake,
+            "basis": "stake",
+            "contract_type": contract_type,
+            "currency": "USD",
+            "duration": duration,
+            "duration_unit": duration_unit,
+            "symbol": SYMBOL
         }
+        
+        if barrier is not None:
+            params["barrier"] = str(barrier)
+            
+        req = { "buy": 1, "price": stake, "parameters": params }
+        
         await self.deriv_ws.send(json.dumps(req))
-        await self.deriv_ws.send(json.dumps({"proposal_open_contract": 1, "subscribe": 1}))
-
-    async def execute_louco_trade(self, stake):
-        self.bot_status = "OPEN_CONTRACT"
-        self.pending_contracts = 2  # Espera fechar 2 contratos
-        self.current_batch_profit = 0.0
-        await self._update_frontend_dashboard()
-        
-        # Divide a stake em 2 ordens
-        half_stake = round(stake / 2, 2)
-        
-        req_zero = {
-            "buy": 1, "price": half_stake,
-            "parameters": { "amount": half_stake, "basis": "stake", "contract_type": "DIGITDIFF", "currency": "USD", "duration": 1, "duration_unit": "t", "symbol": SYMBOL, "barrier": "0" }
-        }
-        req_nine = {
-            "buy": 1, "price": half_stake,
-            "parameters": { "amount": half_stake, "basis": "stake", "contract_type": "DIGITDIFF", "currency": "USD", "duration": 1, "duration_unit": "t", "symbol": SYMBOL, "barrier": "9" }
-        }
-        
-        await self.deriv_ws.send(json.dumps(req_zero))
-        await asyncio.sleep(0.1)
-        await self.deriv_ws.send(json.dumps(req_nine))
-        
         await self.deriv_ws.send(json.dumps({"proposal_open_contract": 1, "subscribe": 1}))
 
     async def _handle_contract_closed(self, contract):
         profit = float(contract["profit"])
+        is_win = profit > 0
         
-        self.current_batch_profit += profit
         self.total_profit += profit
-        self.pending_contracts -= 1
-        
-        # Envia histórico individual
+        self.trades_count += 1
+        if is_win: self.wins += 1
+        else: self.losses += 1
+
+        # Pegar dígito final para regras de recuperação cruzada
+        exit_tick = contract.get("exit_tick_display_value", "")
+        exit_digit = exit_tick[-1] if exit_tick else "-"
+
         trade_data = {
             "type": contract["contract_type"],
-            "tick": contract.get("exit_tick_display_value", "")[-1] if contract.get("exit_tick_display_value") else "-",
+            "tick": exit_digit,
             "stake": contract["buy_price"],
             "profit": profit
         }
         await self._send_to_frontend({"type": "trade_history", "data": trade_data})
 
-        # Quando o LOTE terminar (1 na normal ou 2 na Louco), faz o balanço
-        if self.pending_contracts <= 0:
-            self.trades_count += 1
-            batch_win = self.current_batch_profit > 0
-            
-            if batch_win: self.wins += 1
-            else: self.losses += 1
-
-            # GESTÃO DE RISCO E RECUPERAÇÃO
-            if self.total_profit >= self.take_profit:
-                self.running = False
-                self.bot_status = "STOPPED (META BATIDA)"
-            elif self.total_profit <= -self.stop_loss:
-                self.running = False
-                self.bot_status = "STOPPED (STOP LOSS)"
+        # GESTÃO DE RISCO E LÓGICA DE RECUPERAÇÃO
+        if self.total_profit >= self.take_profit:
+            self.bot_status = "STOPPED (META BATIDA)"
+        elif self.total_profit <= -self.stop_loss:
+            self.bot_status = "STOPPED (STOP LOSS)"
+        else:
+            if is_win:
+                self.losses_in_row = 0 
+                self.bot_status = "ANALYZING"
             else:
-                if batch_win:
-                    self.losses_in_row = 0 
-                    self.bot_status = "ANALYZING"
+                # Se for a estratégia Louco e perdeu, SÓ entra em recuperação se o último dígito for 0 ou 9.
+                if self.strategy == "LOUCO" and self.losses_in_row == 0:
+                    if exit_digit in ['0', '9']:
+                        self.losses_in_row = 1 # Aciona a recuperação DIGITOVER
+                    else:
+                        self.losses_in_row = 0 # Ignora, foi uma perda normal de Rise/Fall
                 else:
                     self.losses_in_row += 1
-                    if self.losses_in_row >= 2:
-                        logging.error("DUAS PERDAS SEGUIDAS! Pausando...")
-                        self.losses_in_row = 0 
-                        self.bot_status = "PAUSED"
-                        asyncio.create_task(self._pause_and_reanalyze(15))
-                    else:
-                        self.bot_status = "ANALYZING" 
 
-            await self._send_to_frontend({"type": "status_update", "status": "CLOSED_CONTRACT"})
-            await asyncio.sleep(1)
-            await self._update_frontend_dashboard()
+                if self.losses_in_row >= 2:
+                    logging.error("DUAS PERDAS! Pausando...")
+                    self.losses_in_row = 0 
+                    self.bot_status = "PAUSED"
+                    asyncio.create_task(self._pause_and_reanalyze(15))
+                else:
+                    self.bot_status = "ANALYZING" 
+
+        await self._send_to_frontend({"type": "status_update", "status": "CLOSED_CONTRACT"})
+        await asyncio.sleep(1)
+        await self._update_frontend_dashboard()
 
     async def _pause_and_reanalyze(self, seconds):
         self.reanalyzing = True
         await asyncio.sleep(seconds)
         self.reanalyzing = False
-        if self.running:
+        if self.bot_status == "PAUSED":
             self.bot_status = "ANALYZING"
             await self._update_frontend_dashboard()
 
@@ -323,7 +307,8 @@ class DerivBot:
             "trades": self.trades_count,
             "wins": self.wins,
             "losses": self.losses,
-            "status": self.bot_status
+            "status": self.bot_status,
+            "auto_mode": self.auto_mode
         })
 
     async def _send_to_frontend(self, data):
@@ -345,15 +330,23 @@ async def websocket_endpoint(websocket: WebSocket):
             if command == "connect":
                 await bot.connect_deriv(data.get("token"))
             
+            # Controle Principal (Start apenas liga o motor, AutoMode define se atira sozinho)
             elif command == "start":
                 bot.running = True
                 bot.bot_status = "ANALYZING"
                 bot.losses_in_row = 0
                 await bot._update_frontend_dashboard()
                 
-            elif command == "pause" or command == "stop":
+            elif command == "stop":
                 bot.running = False
-                bot.bot_status = "STOPPED" if command == "stop" else "PAUSED"
+                bot.auto_mode = False
+                bot.bot_status = "STOPPED"
+                await bot._update_frontend_dashboard()
+                
+            # NOVO: Toggle Auto/Manual
+            elif command == "toggle_auto":
+                bot.auto_mode = data.get("auto")
+                logging.info(f"MODO AUTOMÁTICO: {'LIGADO' if bot.auto_mode else 'DESLIGADO'}")
                 await bot._update_frontend_dashboard()
 
             elif command == "reset_stats":
@@ -373,6 +366,10 @@ async def websocket_endpoint(websocket: WebSocket):
                 bot.recovery_stake = float(data.get("recovery_stake", bot.recovery_stake))
                 bot.stop_loss = float(data.get("stop_loss", bot.stop_loss))
                 bot.take_profit = float(data.get("take_profit", bot.take_profit))
+                
+                # Novas configurações Rise/Fall
+                bot.louco_duration_unit = data.get("louco_unit", "t")
+                bot.louco_duration_value = int(data.get("louco_val", 1))
 
     except WebSocketDisconnect:
         bot.running = False
