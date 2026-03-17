@@ -24,11 +24,11 @@ class DerivBot:
         self.deriv_ws = None
         self.token = None
         self.running = False
-        self.auto_mode = False # NOVO: Controle de Modo Automático / Manual
+        self.auto_mode = False 
         self.bot_status = "ANALYZING"
         
-        self.ticks = [] # Armazena os dígitos (0-9)
-        self.raw_prices = [] # NOVO: Armazena os preços reais para a estratégia Rise/Fall
+        self.ticks = [] 
+        self.raw_prices = [] # Array de preços reais para o gráfico Rise/Fall
         
         self.losses_in_row = 0
         self.balance = 0.0
@@ -40,18 +40,17 @@ class DerivBot:
         
         self.reanalyzing = False
         
-        # Estratégia Ativa
-        self.strategy = "MEGATRON" # Opções: MEGATRON, LOUCO, HALIKINA, FLASH
+        self.strategy = "MEGATRON" 
         
-        # Gestão de Risco Padrão
+        # Configurações de Risco
         self.stake = 1.00
         self.recovery_stake = 2.50
         self.stop_loss = 10.00
         self.take_profit = 10.00
         
-        # NOVO: Configurações exclusivas da Estratégia Louco (Rise/Fall)
-        self.louco_duration_unit = "t" # "t" (ticks) ou "m" (minutos)
-        self.louco_duration_value = 1  # 1 a 5
+        # Configurações exclusivas Louco
+        self.louco_duration_unit = "t" 
+        self.louco_duration_value = 1  
 
     async def connect_deriv(self, token):
         self.token = token
@@ -78,7 +77,7 @@ class DerivBot:
 
         except Exception as e:
             logging.error(f"Erro conexão: {e}")
-            await self._send_to_frontend({"type": "auth_error", "msg": "Falha na conexão com a Deriv."})
+            await self._send_to_frontend({"type": "auth_error", "msg": "Falha conexão."})
             return False
 
     async def listen_deriv(self):
@@ -111,19 +110,20 @@ class DerivBot:
             if self.token: await self.connect_deriv(self.token)
 
     def _process_tick(self, price):
-        # Para a estratégia antiga (Dígitos)
         str_price = f"{float(price):.2f}"
-        last_digit = str_price[-1] 
-        self.ticks.append(last_digit)
+        self.ticks.append(str_price[-1])
         if len(self.ticks) > 25: self.ticks.pop(0)
             
-        # Para a nova estratégia (Rise/Fall)
         self.raw_prices.append(float(price))
         if len(self.raw_prices) > 25: self.raw_prices.pop(0)
             
-        asyncio.create_task(self._send_to_frontend({"type": "ticks_update", "ticks": self.ticks}))
+        # Envia os dois arrays para o Frontend (Dígitos e Preços Reais)
+        asyncio.create_task(self._send_to_frontend({
+            "type": "ticks_update", 
+            "ticks": self.ticks,
+            "prices": self.raw_prices
+        }))
 
-    # MATEMÁTICA ESTRATÉGIA: MEGATRON (DÍGITOS)
     def _analyze_megatron(self):
         if len(self.ticks) < 25: return None
         percentages = {str(i): (self.ticks.count(str(i)) / 25) * 100 for i in range(10)}
@@ -142,11 +142,9 @@ class DerivBot:
 
         return {"cluster": cluster_megatron, "score": score, "perc_9": percentages['9']}
 
-    # MATEMÁTICA ESTRATÉGIA: LOUCO (RISE/FALL)
     def _analyze_louco(self):
         if len(self.raw_prices) < 10: return None
         
-        # Calcula a direção dos movimentos (UP, DOWN, FLAT)
         movements = []
         for i in range(1, len(self.raw_prices)):
             if self.raw_prices[i] > self.raw_prices[i-1]: movements.append("UP")
@@ -157,35 +155,25 @@ class DerivBot:
         last_4 = movements[-4:]
         last_3 = movements[-3:]
 
-        # Filtro de Segurança 1: 5 movimentos na mesma direção (Exaustão/Reversão)
         if len(set(last_5)) == 1 and last_5[0] != "FLAT": return None 
 
-        # Filtro de Segurança 2: Mercado completamente lateralizado (Alternando)
         is_alternating = (last_4 == ["UP", "DOWN", "UP", "DOWN"] or last_4 == ["DOWN", "UP", "DOWN", "UP"])
-        
-        # Identifica Micro Tendência
         is_up_trend = all(m == "UP" for m in last_3)
         is_down_trend = all(m == "DOWN" for m in last_3)
 
-        # Sistema de Score Louco
         score = 0
-        if is_up_trend or is_down_trend: score += 2 # 3 mov iguais
-        if not is_alternating: score += 1           # Sem alternância
-        if "FLAT" not in last_5: score += 1         # Consistência limpa
+        if is_up_trend or is_down_trend: score += 2 
+        if not is_alternating: score += 1           
+        if "FLAT" not in last_5: score += 1         
         
         if score >= 3:
             return "CALL" if is_up_trend else "PUT"
-        
         return None
 
     async def check_strategy(self):
-        # SÓ OPERA SE O MODO AUTOMÁTICO ESTIVER LIGADO
         if not self.running or not self.auto_mode or self.bot_status != "ANALYZING" or self.reanalyzing:
             return
 
-        # ==========================================
-        # 1. ESTRATÉGIA: MEGATRON (DIFFERS 9)
-        # ==========================================
         if self.strategy == "MEGATRON":
             analysis = self._analyze_megatron()
             if not analysis: return
@@ -201,21 +189,13 @@ class DerivBot:
             elif self.losses_in_row == 1:
                 await self.execute_trade("DIGITOVER", 2, self.recovery_stake, 1, "t")
 
-        # ==========================================
-        # 2. ESTRATÉGIA: LOUCO (RISE/FALL)
-        # ==========================================
         elif self.strategy == "LOUCO":
             if self.losses_in_row == 0:
                 direction = self._analyze_louco()
-                if direction: # CALL ou PUT
+                if direction: 
                     await self.execute_trade(direction, None, self.stake, self.louco_duration_value, self.louco_duration_unit)
             elif self.losses_in_row == 1:
-                # Recuperação da Louco (Híbrida: usa dígitos para recuperar)
                 await self.execute_trade("DIGITOVER", 2, self.recovery_stake, 1, "t")
-
-        # As estratégias HALIKINA e FLASH apenas existem no menu por enquanto
-        elif self.strategy in ["HALIKINA", "FLASH"]:
-            pass
 
     async def execute_trade(self, contract_type, barrier, stake, duration, duration_unit):
         self.bot_status = "OPEN_CONTRACT"
@@ -248,7 +228,6 @@ class DerivBot:
         if is_win: self.wins += 1
         else: self.losses += 1
 
-        # Pegar dígito final para regras de recuperação cruzada
         exit_tick = contract.get("exit_tick_display_value", "")
         exit_digit = exit_tick[-1] if exit_tick else "-"
 
@@ -260,7 +239,6 @@ class DerivBot:
         }
         await self._send_to_frontend({"type": "trade_history", "data": trade_data})
 
-        # GESTÃO DE RISCO E LÓGICA DE RECUPERAÇÃO
         if self.total_profit >= self.take_profit:
             self.bot_status = "STOPPED (META BATIDA)"
         elif self.total_profit <= -self.stop_loss:
@@ -270,17 +248,13 @@ class DerivBot:
                 self.losses_in_row = 0 
                 self.bot_status = "ANALYZING"
             else:
-                # Se for a estratégia Louco e perdeu, SÓ entra em recuperação se o último dígito for 0 ou 9.
                 if self.strategy == "LOUCO" and self.losses_in_row == 0:
-                    if exit_digit in ['0', '9']:
-                        self.losses_in_row = 1 # Aciona a recuperação DIGITOVER
-                    else:
-                        self.losses_in_row = 0 # Ignora, foi uma perda normal de Rise/Fall
+                    if exit_digit in ['0', '9']: self.losses_in_row = 1 
+                    else: self.losses_in_row = 0 
                 else:
                     self.losses_in_row += 1
 
                 if self.losses_in_row >= 2:
-                    logging.error("DUAS PERDAS! Pausando...")
                     self.losses_in_row = 0 
                     self.bot_status = "PAUSED"
                     asyncio.create_task(self._pause_and_reanalyze(15))
@@ -330,7 +304,6 @@ async def websocket_endpoint(websocket: WebSocket):
             if command == "connect":
                 await bot.connect_deriv(data.get("token"))
             
-            # Controle Principal (Start apenas liga o motor, AutoMode define se atira sozinho)
             elif command == "start":
                 bot.running = True
                 bot.bot_status = "ANALYZING"
@@ -339,15 +312,23 @@ async def websocket_endpoint(websocket: WebSocket):
                 
             elif command == "stop":
                 bot.running = False
-                bot.auto_mode = False
                 bot.bot_status = "STOPPED"
                 await bot._update_frontend_dashboard()
                 
-            # NOVO: Toggle Auto/Manual
             elif command == "toggle_auto":
                 bot.auto_mode = data.get("auto")
-                logging.info(f"MODO AUTOMÁTICO: {'LIGADO' if bot.auto_mode else 'DESLIGADO'}")
                 await bot._update_frontend_dashboard()
+
+            # COMANDO NOVO: COMPRA MANUAL PELO USUÁRIO
+            elif command == "manual_trade":
+                if not bot.running or bot.bot_status != "ANALYZING": continue
+                
+                strat = data.get("strat")
+                if strat == "MEGATRON":
+                    await bot.execute_trade("DIGITDIFF", 9, bot.stake, 1, "t")
+                elif strat == "LOUCO":
+                    direction = data.get("direction") # "CALL" ou "PUT"
+                    await bot.execute_trade(direction, None, bot.stake, bot.louco_duration_value, bot.louco_duration_unit)
 
             elif command == "reset_stats":
                 bot.total_profit = 0.0
@@ -359,7 +340,6 @@ async def websocket_endpoint(websocket: WebSocket):
 
             elif command == "set_strategy":
                 bot.strategy = data.get("strategy")
-                logging.info(f"Estratégia alterada para: {bot.strategy}")
 
             elif command == "update_settings":
                 bot.stake = float(data.get("stake", bot.stake))
@@ -367,7 +347,6 @@ async def websocket_endpoint(websocket: WebSocket):
                 bot.stop_loss = float(data.get("stop_loss", bot.stop_loss))
                 bot.take_profit = float(data.get("take_profit", bot.take_profit))
                 
-                # Novas configurações Rise/Fall
                 bot.louco_duration_unit = data.get("louco_unit", "t")
                 bot.louco_duration_value = int(data.get("louco_val", 1))
 
