@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Placa Curiosa - Trading Bot</title>
+    <title>Placa Curiosa - Trading Bot Avançado</title>
     <!-- Ícones -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
@@ -50,17 +50,19 @@
         .profit-value.negative { color: var(--red); }
         .trades-count { width: 100%; text-align: right; font-size: 12px; color: var(--text-muted); margin-top: 10px; font-weight: bold; }
 
-        /* DROPDOWNS & VIDEO BUTTON */
+        /* DROPDOWNS & AUTO BUTTON */
         .selectors { display: flex; gap: 10px; margin-bottom: 15px; }
         .selector-box { flex: 1; background: var(--bg-panel); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; }
         .selector-box .label { font-size: 10px; color: var(--blue-accent); font-weight: bold; margin-bottom: 3px; text-transform: uppercase;}
         .selector-box select { width: 100%; background: transparent; border: none; color: white; font-size: 14px; outline: none; appearance: none; }
-        .video-btn { background: var(--red-button); color: white; text-align: center; padding: 15px; border-radius: 8px; margin-bottom: 15px; cursor: pointer; font-size: 20px; box-shadow: 0 4px 10px rgba(255, 59, 59, 0.2); }
+        
+        /* BOTÃO AUTO/MANUAL */
+        .auto-btn { background: var(--red-button); color: white; text-align: center; padding: 15px; border-radius: 8px; margin-bottom: 15px; cursor: pointer; font-size: 16px; font-weight: bold; box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3); transition: 0.3s; display: flex; align-items: center; justify-content: center; gap: 10px;}
+        .auto-btn.active { background: var(--green); box-shadow: 0 4px 15px rgba(46, 204, 113, 0.4); }
 
         /* PAINEL DE DÍGITOS (GRÁFICO DE BARRAS) */
         .digits-panel { background: #1a1a1a; border-radius: 8px; padding: 15px; border: 1px solid #333; margin-bottom: 15px; }
         .digits-header { display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 14px; font-weight: bold; }
-        
         .bar-chart-container { display: flex; justify-content: space-between; align-items: flex-end; height: 110px; margin-top: 15px; padding: 0 5px; }
         .bar-col { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; width: 8%; height: 100%; }
         .bar-pct { font-size: 10px; font-weight: bold; margin-bottom: 5px; color: white; transition: 0.3s;}
@@ -99,11 +101,14 @@
 
         /* SETTINGS MODAL */
         #settings-modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 2000; align-items: center; justify-content: center; }
-        .modal-content { background: var(--bg-panel); padding: 25px; border-radius: 8px; width: 90%; max-width: 350px; border: 1px solid var(--border); }
+        .modal-content { background: var(--bg-panel); padding: 25px; border-radius: 8px; width: 90%; max-width: 350px; border: 1px solid var(--border); max-height: 90vh; overflow-y: auto;}
         .modal-content h2 { margin-bottom: 20px; font-size: 18px; border-bottom: 1px solid var(--border); padding-bottom: 10px; }
         .input-group { margin-bottom: 15px; }
         .input-group label { display: block; font-size: 12px; color: var(--text-muted); margin-bottom: 5px; }
-        .input-group input { width: 100%; padding: 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-main); color: white; }
+        .input-group input, .input-group select { width: 100%; padding: 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-main); color: white; }
+        
+        .section-title { font-size: 11px; color: var(--blue-accent); text-transform: uppercase; margin: 20px 0 10px 0; border-bottom: 1px dashed var(--border); padding-bottom: 5px;}
+        
         .modal-buttons { display: flex; gap: 10px; margin-top: 20px; }
         .btn-modal { flex: 1; padding: 10px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; color: white;}
         .btn-save { background: var(--blue-accent); }
@@ -112,17 +117,15 @@
 </head>
 <body>
 
-    <!-- TELA 1: CONEXÃO -->
     <div id="login-screen">
         <div class="login-box">
-            <h1>Placa Curiosa Bot</h1>
+            <h1>Bot Advanced Pro</h1>
             <input type="text" id="api-token" placeholder="Insira seu Token da Deriv" autocomplete="off">
             <button onclick="connectBot()">CONECTAR</button>
             <div id="error-msg" style="color:var(--red); margin-top:10px; font-size:12px; display:none;"></div>
         </div>
     </div>
 
-    <!-- HEADER GERAL -->
     <header id="main-header" style="display: none;">
         <div class="logo">
             <i class="fa-solid fa-p"></i> PLACA CURIOSA<br><span style="font-size: 8px; font-weight: normal;">OPERAÇÕES AUTOMATIZADAS</span>
@@ -130,7 +133,6 @@
         <div class="menu-btn">MENU</div>
     </header>
 
-    <!-- TELA 2: DASHBOARD -->
     <div id="dashboard-screen">
         
         <div class="balance-panel">
@@ -156,16 +158,18 @@
             </div>
             <div class="selector-box">
                 <div class="label">Estratégia</div>
-                <!-- NOVO SELECT FUNCIONAL -->
                 <select id="strategy-select" onchange="changeStrategy()">
-                    <option value="MEGATRON">Megatron</option>
-                    <option value="LOUCO">Louco</option>
+                    <option value="MEGATRON">Megatron (Differs 9)</option>
+                    <option value="LOUCO">Louco (Rise/Fall)</option>
+                    <option value="HALIKINA">Halikina</option>
+                    <option value="FLASH">Flash</option>
                 </select>
             </div>
         </div>
 
-        <div class="video-btn">
-            <i class="fa-solid fa-play"></i>
+        <!-- NOVO: BOTÃO AUTO / MANUAL -->
+        <div class="auto-btn" id="btn-auto-manual" onclick="toggleAutoMode()">
+            <i class="fa-solid fa-hand"></i> MODO MANUAL
         </div>
 
         <div class="digits-panel">
@@ -173,15 +177,12 @@
                 <span>Last Digits: <span id="last-digit-text">-</span></span>
                 <span style="color:var(--text-muted); font-weight:normal;">25 ticks <i class="fa-solid fa-chevron-down" style="font-size: 10px; margin-left: 5px;"></i></span>
             </div>
-            
-            <div class="bar-chart-container" id="bar-chart-container">
-                <!-- Barras injetadas via JavaScript -->
-            </div>
+            <div class="bar-chart-container" id="bar-chart-container"></div>
         </div>
 
         <div class="controls-row">
             <div class="btn-icon" onclick="openSettings()"><i class="fa-solid fa-gear"></i></div>
-            <div class="btn-icon btn-play" id="btn-play-pause" onclick="toggleBot()"><i class="fa-solid fa-play" id="play-icon"></i></div>
+            <div class="btn-icon btn-play" id="btn-play-pause" onclick="toggleEngine()"><i class="fa-solid fa-power-off" id="play-icon"></i></div>
             
             <div class="status-tracker">
                 <div class="status-line"></div>
@@ -224,7 +225,9 @@
     <!-- MODAL DE CONFIGURAÇÃO -->
     <div id="settings-modal">
         <div class="modal-content">
-            <h2>Gestão de Risco</h2>
+            <h2>Gestão de Risco & Estratégia</h2>
+            
+            <div class="section-title">Valores Globais</div>
             <div class="input-group">
                 <label>Stake Inicial (USD)</label>
                 <input type="number" id="inp-stake" value="1.00" step="0.50">
@@ -234,13 +237,27 @@
                 <input type="number" id="inp-recovery" value="2.50" step="0.50">
             </div>
             <div class="input-group">
-                <label>Stop Loss (Limite de Perda)</label>
+                <label>Stop Loss (USD)</label>
                 <input type="number" id="inp-loss" value="10.00" step="1.00">
             </div>
             <div class="input-group">
-                <label>Take Profit (Meta de Ganho)</label>
+                <label>Take Profit (USD)</label>
                 <input type="number" id="inp-profit" value="10.00" step="1.00">
             </div>
+
+            <div class="section-title">Config. Estratégia Louco (Rise/Fall)</div>
+            <div class="input-group">
+                <label>Duração</label>
+                <select id="inp-louco-unit">
+                    <option value="t">Ticks</option>
+                    <option value="m">Minutos</option>
+                </select>
+            </div>
+            <div class="input-group">
+                <label>Valor (1 a 5)</label>
+                <input type="number" id="inp-louco-val" value="1" min="1" max="5">
+            </div>
+
             <div class="modal-buttons">
                 <button class="btn-modal btn-cancel" onclick="closeSettings()">Cancelar</button>
                 <button class="btn-modal btn-save" onclick="saveSettings()">Salvar</button>
@@ -250,7 +267,8 @@
 
     <script>
         let ws;
-        let isRunning = false;
+        let isEngineRunning = false;
+        let isAutoMode = false;
 
         const chartContainer = document.getElementById('bar-chart-container');
         for (let i = 0; i <= 9; i++) {
@@ -283,6 +301,8 @@
                     document.getElementById('login-screen').style.display = 'none';
                     document.getElementById('main-header').style.display = 'flex';
                     document.getElementById('dashboard-screen').style.display = 'block';
+                    // Liga o motor de análise por padrão
+                    toggleEngine();
                 }
                 else if (msg.type === "auth_error") {
                     document.getElementById('error-msg').innerText = msg.msg;
@@ -293,11 +313,26 @@
                 else if (msg.type === "status_update") { updateStatusBar(msg.status); }
                 else if (msg.type === "trade_history") { addTradeToHistory(msg.data); }
             };
-
-            ws.onclose = () => { alert("Conexão perdida. Atualize a página."); };
         }
 
-        // Função chamada pelo Menu de Seleção de Estratégia
+        // LÓGICA DO BOTÃO AUTO/MANUAL
+        function toggleAutoMode() {
+            isAutoMode = !isAutoMode;
+            const btn = document.getElementById('btn-auto-manual');
+            
+            if (isAutoMode) {
+                btn.classList.add('active');
+                btn.innerHTML = '<i class="fa-solid fa-robot"></i> MODO AUTOMÁTICO';
+            } else {
+                btn.classList.remove('active');
+                btn.innerHTML = '<i class="fa-solid fa-hand"></i> MODO MANUAL';
+            }
+            
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ action: "toggle_auto", auto: isAutoMode }));
+            }
+        }
+
         function changeStrategy() {
             const strat = document.getElementById('strategy-select').value;
             if (ws && ws.readyState === WebSocket.OPEN) {
@@ -317,37 +352,31 @@
 
             updateStatusBar(data.status);
 
-            if(data.status.includes("STOPPED")) {
-                isRunning = false;
-                updatePlayButtonUI();
-                if(data.status !== "STOPPED") alert(data.status); 
+            if(data.status.includes("STOPPED") && isEngineRunning) {
+                isEngineRunning = false;
+                if(isAutoMode) toggleAutoMode(); // Desliga o auto por segurança
+                updateEngineUI();
+                alert(data.status); 
             }
         }
 
         function updateChart(ticks) {
             if(ticks.length === 0) return;
-            
             document.getElementById('last-digit-text').innerText = ticks[ticks.length - 1];
-
             let counts = {0:0, 1:0, 2:0, 3:0, 4:0, 5:0, 6:0, 7:0, 8:0, 9:0};
             ticks.forEach(t => counts[t]++);
-
             let maxCount = Math.max(...Object.values(counts));
 
             for (let i = 0; i <= 9; i++) {
                 let count = counts[i];
                 let pct = Math.round((count / ticks.length) * 100); 
-
                 let pctEl = document.getElementById(`pct-${i}`);
                 let barEl = document.getElementById(`bar-${i}`);
-
                 pctEl.innerText = `${pct}%`;
                 pctEl.className = 'bar-pct';
                 barEl.className = 'bar-fill';
-
-                if (pct === 0) {
-                    barEl.classList.add('red');
-                } else {
+                if (pct === 0) { barEl.classList.add('red'); } 
+                else {
                     barEl.style.height = `${Math.min(pct * 4, 100)}%`; 
                     if (count === maxCount && count > 0) {
                         barEl.classList.add('green');
@@ -367,23 +396,24 @@
             else if(status === "CLOSED_CONTRACT") document.getElementById('node-closed').classList.add('active');
         }
 
-        function toggleBot() {
-            isRunning = !isRunning;
-            updatePlayButtonUI();
+        // Liga/Desliga a recepção e análise do motor principal
+        function toggleEngine() {
+            isEngineRunning = !isEngineRunning;
+            updateEngineUI();
             if (ws && ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({ action: isRunning ? 'start' : 'stop' }));
+                ws.send(JSON.stringify({ action: isEngineRunning ? 'start' : 'stop' }));
             }
         }
 
-        function updatePlayButtonUI() {
+        function updateEngineUI() {
             const btn = document.getElementById('btn-play-pause');
             const icon = document.getElementById('play-icon');
-            if (isRunning) {
+            if (isEngineRunning) {
                 btn.classList.add('playing');
-                icon.className = 'fa-solid fa-stop';
+                icon.className = 'fa-solid fa-power-off';
             } else {
                 btn.classList.remove('playing');
-                icon.className = 'fa-solid fa-play';
+                icon.className = 'fa-solid fa-power-off';
                 updateStatusBar("IDLE");
             }
         }
@@ -394,9 +424,8 @@
 
             const row = document.createElement('tr');
             const isWin = trade.profit > 0;
-            
             row.innerHTML = `
-                <td>${trade.type.substring(0,6)}...</td>
+                <td>${trade.type.substring(0,6)}</td>
                 <td>${trade.tick}</td>
                 <td>$ ${trade.stake.toFixed(2)}</td>
                 <td class="${isWin ? 'win' : 'loss'}">${isWin ? '+' : ''}$ ${trade.profit.toFixed(2)}</td>
@@ -407,9 +436,7 @@
 
         function resetStats() {
             document.getElementById('history-body').innerHTML = '<tr><td colspan="4" style="text-align:center; color:var(--text-muted); padding:20px;">No trades yet</td></tr>';
-            if (ws && ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({ action: 'reset_stats' }));
-            }
+            if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ action: 'reset_stats' })); }
         }
 
         function openSettings() { document.getElementById('settings-modal').style.display = 'flex'; }
@@ -422,11 +449,12 @@
                     stake: document.getElementById('inp-stake').value,
                     recovery_stake: document.getElementById('inp-recovery').value,
                     stop_loss: document.getElementById('inp-loss').value,
-                    take_profit: document.getElementById('inp-profit').value
+                    take_profit: document.getElementById('inp-profit').value,
+                    louco_unit: document.getElementById('inp-louco-unit').value,
+                    louco_val: document.getElementById('inp-louco-val').value
                 }));
             }
             closeSettings();
-            alert("Configurações salvas com sucesso!");
         }
     </script>
 </body>
