@@ -28,7 +28,7 @@ class DerivBot:
         self.bot_status = "ANALYZING"
         
         self.ticks = [] 
-        self.raw_prices = [] # Array de preços reais para o gráfico Rise/Fall
+        self.raw_prices = [] 
         
         self.losses_in_row = 0
         self.balance = 0.0
@@ -42,15 +42,21 @@ class DerivBot:
         
         self.strategy = "MEGATRON" 
         
-        # Configurações de Risco
+        # Configurações Globais de Risco
         self.stake = 1.00
         self.recovery_stake = 2.50
         self.stop_loss = 10.00
         self.take_profit = 10.00
         
-        # Configurações exclusivas Louco
+        # Configurações: Louco (Rise/Fall)
         self.louco_duration_unit = "t" 
         self.louco_duration_value = 1  
+        
+        # Configurações: Halikina (Over/Under)
+        self.halikina_type = "OVER" # "OVER" ou "UNDER"
+        self.halikina_barrier = 4   # Dígito alvo X (0-9)
+        self.halikina_duration_unit = "t" 
+        self.halikina_duration_value = 1 
 
     async def connect_deriv(self, token):
         self.token = token
@@ -117,17 +123,16 @@ class DerivBot:
         self.raw_prices.append(float(price))
         if len(self.raw_prices) > 25: self.raw_prices.pop(0)
             
-        # Envia os dois arrays para o Frontend (Dígitos e Preços Reais)
         asyncio.create_task(self._send_to_frontend({
             "type": "ticks_update", 
             "ticks": self.ticks,
             "prices": self.raw_prices
         }))
 
+    # MATEMÁTICA: MEGATRON (DIFFERS 9)
     def _analyze_megatron(self):
         if len(self.ticks) < 25: return None
         percentages = {str(i): (self.ticks.count(str(i)) / 25) * 100 for i in range(10)}
-        
         delay_9 = 0
         for tick in reversed(self.ticks):
             if tick == '9': break
@@ -142,9 +147,9 @@ class DerivBot:
 
         return {"cluster": cluster_megatron, "score": score, "perc_9": percentages['9']}
 
+    # MATEMÁTICA: LOUCO (RISE/FALL)
     def _analyze_louco(self):
         if len(self.raw_prices) < 10: return None
-        
         movements = []
         for i in range(1, len(self.raw_prices)):
             if self.raw_prices[i] > self.raw_prices[i-1]: movements.append("UP")
@@ -156,7 +161,6 @@ class DerivBot:
         last_3 = movements[-3:]
 
         if len(set(last_5)) == 1 and last_5[0] != "FLAT": return None 
-
         is_alternating = (last_4 == ["UP", "DOWN", "UP", "DOWN"] or last_4 == ["DOWN", "UP", "DOWN", "UP"])
         is_up_trend = all(m == "UP" for m in last_3)
         is_down_trend = all(m == "DOWN" for m in last_3)
@@ -170,10 +174,51 @@ class DerivBot:
             return "CALL" if is_up_trend else "PUT"
         return None
 
+    # MATEMÁTICA: HALIKINA (OVER/UNDER)
+    def _analyze_halikina(self):
+        if len(self.ticks) < 25: return None
+        
+        target = self.halikina_barrier
+        
+        # Conta a quantidade de dígitos maiores e menores que X
+        over_count = sum(1 for t in self.ticks if int(t) > target)
+        under_count = sum(1 for t in self.ticks if int(t) < target)
+        
+        over_pct = (over_count / 25) * 100
+        under_pct = (under_count / 25) * 100
+
+        last_3_digits = [int(t) for t in self.ticks[-3:]]
+        
+        score = 0
+        should_enter = False
+        contract_to_buy = None
+
+        if self.halikina_type == "OVER":
+            if over_pct > 50: score += 2
+            if all(t > target for t in last_3_digits): score += 1
+            
+            if score >= 3:
+                should_enter = True
+                contract_to_buy = "DIGITOVER"
+                
+        elif self.halikina_type == "UNDER":
+            if under_pct > 50: score += 2
+            if all(t < target for t in last_3_digits): score += 1
+            
+            if score >= 3:
+                should_enter = True
+                contract_to_buy = "DIGITUNDER"
+
+        return {"enter": should_enter, "contract": contract_to_buy, "barrier": target}
+
+
     async def check_strategy(self):
         if not self.running or not self.auto_mode or self.bot_status != "ANALYZING" or self.reanalyzing:
             return
 
+        # ==========================================
+        # 1. MEGATRON
+        # ==========================================
         if self.strategy == "MEGATRON":
             analysis = self._analyze_megatron()
             if not analysis: return
@@ -189,6 +234,9 @@ class DerivBot:
             elif self.losses_in_row == 1:
                 await self.execute_trade("DIGITOVER", 2, self.recovery_stake, 1, "t")
 
+        # ==========================================
+        # 2. LOUCO
+        # ==========================================
         elif self.strategy == "LOUCO":
             if self.losses_in_row == 0:
                 direction = self._analyze_louco()
@@ -196,6 +244,20 @@ class DerivBot:
                     await self.execute_trade(direction, None, self.stake, self.louco_duration_value, self.louco_duration_unit)
             elif self.losses_in_row == 1:
                 await self.execute_trade("DIGITOVER", 2, self.recovery_stake, 1, "t")
+
+        # ==========================================
+        # 3. HALIKINA
+        # ==========================================
+        elif self.strategy == "HALIKINA":
+            if self.losses_in_row == 0:
+                analysis = self._analyze_halikina()
+                if analysis and analysis["enter"]:
+                    await self.execute_trade(analysis["contract"], analysis["barrier"], self.stake, self.halikina_duration_value, self.halikina_duration_unit)
+            elif self.losses_in_row == 1:
+                # Na recuperação da Halikina, tenta o mesmo contrato porém com a stake de recuperação
+                contract = "DIGITOVER" if self.halikina_type == "OVER" else "DIGITUNDER"
+                await self.execute_trade(contract, self.halikina_barrier, self.recovery_stake, self.halikina_duration_value, self.halikina_duration_unit)
+
 
     async def execute_trade(self, contract_type, barrier, stake, duration, duration_unit):
         self.bot_status = "OPEN_CONTRACT"
@@ -319,16 +381,22 @@ async def websocket_endpoint(websocket: WebSocket):
                 bot.auto_mode = data.get("auto")
                 await bot._update_frontend_dashboard()
 
-            # COMANDO NOVO: COMPRA MANUAL PELO USUÁRIO
+            # TRADE MANUAL 
             elif command == "manual_trade":
                 if not bot.running or bot.bot_status != "ANALYZING": continue
                 
                 strat = data.get("strat")
                 if strat == "MEGATRON":
                     await bot.execute_trade("DIGITDIFF", 9, bot.stake, 1, "t")
+                
                 elif strat == "LOUCO":
                     direction = data.get("direction") # "CALL" ou "PUT"
                     await bot.execute_trade(direction, None, bot.stake, bot.louco_duration_value, bot.louco_duration_unit)
+                
+                elif strat == "HALIKINA":
+                    contract = data.get("contract") # "DIGITOVER" ou "DIGITUNDER"
+                    barrier = bot.halikina_barrier
+                    await bot.execute_trade(contract, barrier, bot.stake, bot.halikina_duration_value, bot.halikina_duration_unit)
 
             elif command == "reset_stats":
                 bot.total_profit = 0.0
@@ -342,13 +410,21 @@ async def websocket_endpoint(websocket: WebSocket):
                 bot.strategy = data.get("strategy")
 
             elif command == "update_settings":
+                # Globais
                 bot.stake = float(data.get("stake", bot.stake))
                 bot.recovery_stake = float(data.get("recovery_stake", bot.recovery_stake))
                 bot.stop_loss = float(data.get("stop_loss", bot.stop_loss))
                 bot.take_profit = float(data.get("take_profit", bot.take_profit))
                 
+                # Louco
                 bot.louco_duration_unit = data.get("louco_unit", "t")
                 bot.louco_duration_value = int(data.get("louco_val", 1))
+                
+                # Halikina
+                bot.halikina_type = data.get("halikina_type", "OVER")
+                bot.halikina_barrier = int(data.get("halikina_barrier", 4))
+                bot.halikina_duration_unit = data.get("halikina_unit", "t")
+                bot.halikina_duration_value = int(data.get("halikina_val", 1))
 
     except WebSocketDisconnect:
         bot.running = False
