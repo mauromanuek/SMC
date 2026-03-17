@@ -15,6 +15,7 @@
             --green: #2ecc71;
             --red: #e74c3c;
             --blue-accent: #0088ff;
+            --orange: #f39c12;
             --border: #1e3557;
             --bar-bg: #e2e8f0;
         }
@@ -22,7 +23,6 @@
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         body { background-color: var(--bg-main); color: var(--text-main); height: 100vh; display: flex; flex-direction: column; overflow-x: hidden;}
 
-        /* LOGIN SCREEN */
         #login-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; background: var(--bg-main); z-index: 1000; position: absolute; width: 100%; top:0; left:0;}
         .login-box { background-color: var(--bg-panel); padding: 40px; border-radius: 8px; border: 1px solid var(--border); text-align: center; width: 90%; max-width: 350px; }
         .login-box h1 { margin-bottom: 20px; font-size: 20px; }
@@ -55,7 +55,7 @@
         .digits-panel { background: #1a1a1a; border-radius: 8px; padding: 15px; border: 1px solid #333; margin-bottom: 15px; }
         .digits-header { display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 14px; font-weight: bold; }
         
-        /* Gráfico Barras (Megatron) */
+        /* Gráfico Barras (Megatron / Halikina) */
         .bar-chart-container { display: flex; justify-content: space-between; align-items: flex-end; height: 110px; margin-top: 15px; padding: 0 5px; }
         .bar-col { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; width: 8%; height: 100%; }
         .bar-pct { font-size: 10px; font-weight: bold; margin-bottom: 5px; color: white; transition: 0.3s;}
@@ -70,12 +70,10 @@
         #tick-chart-container { display: none; width: 100%; height: 110px; position: relative; margin-top:15px; }
         canvas { width: 100%; height: 100%; }
 
-        /* CONTROLS (LIGAR BOT) E PAINEL DE STATUS */
         .controls-row { display: flex; align-items: center; gap: 15px; margin-bottom: 15px; }
         .btn-icon { background: var(--bg-panel); border: 1px solid var(--border); color: white; width: 45px; height: 45px; border-radius: 8px; display: flex; justify-content: center; align-items: center; font-size: 18px; cursor: pointer; transition: 0.3s; }
         .btn-icon:hover { background: #1e3a5f; }
         
-        /* BOTÃO START (VERDE QUANDO LIGADO) */
         .btn-play { background: transparent; border: 1px solid #555; color: #555; }
         .btn-play.playing { background: var(--green); border-color: var(--green); color: white; box-shadow: 0 0 10px rgba(46, 204, 113, 0.4);}
 
@@ -87,7 +85,7 @@
         .status-node.active .node-dot { background: white; box-shadow: 0 0 8px white; }
         .status-node.active .node-label { color: white; }
 
-        /* CONTROLES MANUAIS DO USUÁRIO */
+        /* CONTROLES MANUAIS */
         #manual-controls { display: none; margin-bottom: 20px; background: var(--bg-panel); border-radius: 8px; padding: 15px; border: 1px solid var(--border); }
         .manual-title { font-size: 12px; color: var(--text-muted); margin-bottom: 10px; text-align: center; font-weight: bold;}
         .manual-grid { display: flex; gap: 10px; }
@@ -95,6 +93,8 @@
         .btn-call { background: var(--green); } .btn-call:hover{ background: #27ae60; }
         .btn-put { background: var(--red); } .btn-put:hover{ background: #c0392b; }
         .btn-differs { background: var(--blue-accent); } .btn-differs:hover{ background: #0077e6; }
+        .btn-over { background: var(--blue-accent); } .btn-over:hover{ background: #0077e6; }
+        .btn-under { background: var(--orange); } .btn-under:hover{ background: #e67e22; }
 
         .tabs { display: flex; margin-bottom: 10px; }
         .tab { flex: 1; text-align: center; padding: 12px; font-size: 12px; font-weight: bold; cursor: pointer; border-bottom: 2px solid transparent; color: var(--text-muted); }
@@ -107,7 +107,7 @@
         .loss { color: var(--red); }
 
         #settings-modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 2000; align-items: center; justify-content: center; }
-        .modal-content { background: var(--bg-panel); padding: 25px; border-radius: 8px; width: 90%; max-width: 350px; border: 1px solid var(--border); }
+        .modal-content { background: var(--bg-panel); padding: 25px; border-radius: 8px; width: 90%; max-width: 350px; border: 1px solid var(--border); max-height: 90vh; overflow-y: auto;}
         .modal-content h2 { margin-bottom: 20px; font-size: 18px; border-bottom: 1px solid var(--border); padding-bottom: 10px; }
         .input-group { margin-bottom: 15px; }
         .input-group label { display: block; font-size: 12px; color: var(--text-muted); margin-bottom: 5px; }
@@ -165,7 +165,7 @@
                 <select id="strategy-select" onchange="changeStrategy()">
                     <option value="MEGATRON">Megatron (Differs 9)</option>
                     <option value="LOUCO">Louco (Rise/Fall)</option>
-                    <option value="HALIKINA">Halikina</option>
+                    <option value="HALIKINA">Halikina (Over/Under)</option>
                     <option value="FLASH">Flash</option>
                 </select>
             </div>
@@ -181,10 +181,8 @@
                 <span style="color:var(--text-muted); font-weight:normal;">25 ticks</span>
             </div>
             
-            <!-- GRÁFICO 1: BARRAS (MEGATRON) -->
             <div class="bar-chart-container" id="bar-chart-container"></div>
             
-            <!-- GRÁFICO 2: LINHAS (LOUCO RISE/FALL) -->
             <div id="tick-chart-container">
                 <canvas id="tickCanvas"></canvas>
             </div>
@@ -211,19 +209,22 @@
             </div>
         </div>
 
-        <!-- PAINEL DE OPERAÇÃO MANUAL (SÓ APARECE SE AUTO ESTIVER OFF E START ESTIVER LIGADO) -->
+        <!-- PAINEL MANUAL -->
         <div id="manual-controls">
             <div class="manual-title">OPERAÇÃO MANUAL ATIVADA</div>
             
-            <!-- Botoes Megatron -->
             <div class="manual-grid" id="manual-megatron">
                 <button class="btn-manual btn-differs" onclick="sendManualTrade('MEGATRON', null)"><i class="fa-solid fa-bullseye"></i> COMPRAR DIFFERS 9</button>
             </div>
 
-            <!-- Botoes Louco -->
             <div class="manual-grid" id="manual-louco" style="display:none;">
                 <button class="btn-manual btn-call" onclick="sendManualTrade('LOUCO', 'CALL')"><i class="fa-solid fa-arrow-trend-up"></i> RISE (SOBE)</button>
                 <button class="btn-manual btn-put" onclick="sendManualTrade('LOUCO', 'PUT')"><i class="fa-solid fa-arrow-trend-down"></i> FALL (DESCE)</button>
+            </div>
+            
+            <div class="manual-grid" id="manual-halikina" style="display:none;">
+                <button class="btn-manual btn-over" onclick="sendManualTrade('HALIKINA', 'DIGITOVER')"><i class="fa-solid fa-arrow-up-9-1"></i> BUY OVER</button>
+                <button class="btn-manual btn-under" onclick="sendManualTrade('HALIKINA', 'DIGITUNDER')"><i class="fa-solid fa-arrow-down-9-1"></i> BUY UNDER</button>
             </div>
         </div>
 
@@ -269,19 +270,37 @@
                 <input type="number" id="inp-profit" value="10.00" step="1.00">
             </div>
 
-            <!-- ESPECÍFICO DA ESTRATÉGIA LOUCO (Fica oculto no Megatron) -->
+            <!-- MENU EXCLUSIVO: LOUCO -->
             <div id="louco-settings" style="display: none;">
                 <div class="section-title">Rise / Fall (Louco)</div>
                 <div class="input-group">
-                    <label>Tipo de Tempo</label>
-                    <select id="inp-louco-unit">
-                        <option value="t">Ticks</option>
-                        <option value="m">Minutos</option>
-                    </select>
+                    <label>Tempo de Contrato</label>
+                    <select id="inp-louco-unit"><option value="t">Ticks</option><option value="m">Minutos</option></select>
                 </div>
                 <div class="input-group">
                     <label>Valor (1 a 5)</label>
                     <input type="number" id="inp-louco-val" value="1" min="1" max="5">
+                </div>
+            </div>
+
+            <!-- MENU EXCLUSIVO: HALIKINA -->
+            <div id="halikina-settings" style="display: none;">
+                <div class="section-title">Over / Under (Halikina)</div>
+                <div class="input-group">
+                    <label>Modo Automático</label>
+                    <select id="inp-hali-type"><option value="OVER">Atirar em OVER</option><option value="UNDER">Atirar em UNDER</option></select>
+                </div>
+                <div class="input-group">
+                    <label>Barreira (Dígito Alvo 0 a 9)</label>
+                    <input type="number" id="inp-hali-barrier" value="4" min="0" max="9">
+                </div>
+                <div class="input-group">
+                    <label>Tempo de Contrato</label>
+                    <select id="inp-hali-unit"><option value="t">Ticks</option><option value="m">Minutos</option></select>
+                </div>
+                <div class="input-group">
+                    <label>Valor (1 a 5)</label>
+                    <input type="number" id="inp-hali-val" value="1" min="1" max="5">
                 </div>
             </div>
 
@@ -383,7 +402,6 @@
             }
         }
 
-        // Mostra o painel de botões de compra somente se o Modo for Manual E o Start estiver ligado
         function checkManualControlsVisibility() {
             const manualPanel = document.getElementById('manual-controls');
             if (!isAutoMode && isEngineRunning) {
@@ -393,31 +411,41 @@
             }
         }
 
-        // Função que atira manualmente
-        function sendManualTrade(strat, direction) {
+        function sendManualTrade(strat, contract_or_direction) {
             if (ws && ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({ action: "manual_trade", strat: strat, direction: direction }));
+                let payload = { action: "manual_trade", strat: strat };
+                if (strat === "LOUCO") payload.direction = contract_or_direction;
+                if (strat === "HALIKINA") payload.contract = contract_or_direction;
+                ws.send(JSON.stringify(payload));
             }
         }
 
         function changeStrategy() {
             currentStrat = document.getElementById('strategy-select').value;
             
-            // Troca os Gráficos
+            // Oculta todos os manuais
+            document.getElementById('manual-megatron').style.display = 'none';
+            document.getElementById('manual-louco').style.display = 'none';
+            document.getElementById('manual-halikina').style.display = 'none';
+            
+            // Troca os Gráficos e ativa botões
             if(currentStrat === "MEGATRON") {
                 document.getElementById('bar-chart-container').style.display = 'flex';
                 document.getElementById('tick-chart-container').style.display = 'none';
                 document.getElementById('chart-title').innerHTML = `Análise Digitos 0-9: <span id="last-digit-text">-</span>`;
-                
                 document.getElementById('manual-megatron').style.display = 'flex';
-                document.getElementById('manual-louco').style.display = 'none';
-            } else if (currentStrat === "LOUCO") {
+            } 
+            else if (currentStrat === "LOUCO") {
                 document.getElementById('bar-chart-container').style.display = 'none';
                 document.getElementById('tick-chart-container').style.display = 'block';
                 document.getElementById('chart-title').innerHTML = `Worm Chart (Rise/Fall): <span id="last-digit-text">-</span>`;
-                
-                document.getElementById('manual-megatron').style.display = 'none';
                 document.getElementById('manual-louco').style.display = 'flex';
+            }
+            else if (currentStrat === "HALIKINA") {
+                document.getElementById('bar-chart-container').style.display = 'flex';
+                document.getElementById('tick-chart-container').style.display = 'none';
+                document.getElementById('chart-title').innerHTML = `Análise Over/Under: <span id="last-digit-text">-</span>`;
+                document.getElementById('manual-halikina').style.display = 'flex';
             }
 
             if (ws && ws.readyState === WebSocket.OPEN) {
@@ -446,7 +474,7 @@
         }
 
         function updateBarChart(ticks) {
-            if(ticks.length === 0 || currentStrat !== "MEGATRON") return;
+            if(ticks.length === 0 || (currentStrat !== "MEGATRON" && currentStrat !== "HALIKINA")) return;
             document.getElementById('last-digit-text').innerText = ticks[ticks.length - 1];
             let counts = {0:0, 1:0, 2:0, 3:0, 4:0, 5:0, 6:0, 7:0, 8:0, 9:0};
             ticks.forEach(t => counts[t]++);
@@ -471,7 +499,6 @@
             }
         }
 
-        // Desenha o Gráfico de Linha (Worm Chart) para Rise/Fall
         function drawLineChart(prices) {
             if(prices.length === 0 || currentStrat !== "LOUCO") return;
             document.getElementById('last-digit-text').innerText = prices[prices.length - 1].toFixed(2);
@@ -479,10 +506,8 @@
             const canvas = document.getElementById('tickCanvas');
             const ctx = canvas.getContext('2d');
             
-            // Ajusta tamanho interno do canvas ao tamanho real
             canvas.width = canvas.parentElement.clientWidth;
             canvas.height = canvas.parentElement.clientHeight;
-
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
             const minPrice = Math.min(...prices);
@@ -501,25 +526,21 @@
 
             for(let i=0; i<prices.length; i++) {
                 const x = padding + (i * stepX);
-                // Inverte o Y porque no canvas o 0 é em cima
                 const y = padding + drawableHeight - (((prices[i] - minPrice) / range) * drawableHeight);
-                
                 if (i === 0) ctx.moveTo(x, y);
                 else ctx.lineTo(x, y);
             }
             ctx.stroke();
 
-            // Ponto Final
             const lastX = padding + ((prices.length - 1) * stepX);
             const lastY = padding + drawableHeight - (((prices[prices.length - 1] - minPrice) / range) * drawableHeight);
             
             ctx.beginPath();
             ctx.arc(lastX, lastY, 5, 0, Math.PI * 2);
-            // Cor do ponto final baseado no movimento
             if (prices.length > 1 && prices[prices.length-1] >= prices[prices.length-2]) {
-                ctx.fillStyle = "#2ecc71"; // Sobe = Verde
+                ctx.fillStyle = "#2ecc71"; 
             } else {
-                ctx.fillStyle = "#e74c3c"; // Desce = Vermelho
+                ctx.fillStyle = "#e74c3c"; 
             }
             ctx.fill();
         }
@@ -555,12 +576,9 @@
         }
 
         function openSettings() { 
-            // Mostra ou oculta confis exclusivas dependendo da estratégia
-            if(currentStrat === "LOUCO") {
-                document.getElementById('louco-settings').style.display = 'block';
-            } else {
-                document.getElementById('louco-settings').style.display = 'none';
-            }
+            document.getElementById('louco-settings').style.display = (currentStrat === "LOUCO") ? 'block' : 'none';
+            document.getElementById('halikina-settings').style.display = (currentStrat === "HALIKINA") ? 'block' : 'none';
+            
             document.getElementById('settings-modal').style.display = 'flex'; 
         }
         
@@ -574,8 +592,14 @@
                     recovery_stake: document.getElementById('inp-recovery').value,
                     stop_loss: document.getElementById('inp-loss').value,
                     take_profit: document.getElementById('inp-profit').value,
+                    
                     louco_unit: document.getElementById('inp-louco-unit').value,
-                    louco_val: document.getElementById('inp-louco-val').value
+                    louco_val: document.getElementById('inp-louco-val').value,
+                    
+                    halikina_type: document.getElementById('inp-hali-type').value,
+                    halikina_barrier: document.getElementById('inp-hali-barrier').value,
+                    halikina_unit: document.getElementById('inp-hali-unit').value,
+                    halikina_val: document.getElementById('inp-hali-val').value
                 }));
             }
             closeSettings();
