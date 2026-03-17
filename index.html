@@ -156,7 +156,11 @@
             </div>
             <div class="selector-box">
                 <div class="label">Estratégia</div>
-                <select><option>Megatron</option></select>
+                <!-- NOVO SELECT FUNCIONAL -->
+                <select id="strategy-select" onchange="changeStrategy()">
+                    <option value="MEGATRON">Megatron</option>
+                    <option value="LOUCO">Louco</option>
+                </select>
             </div>
         </div>
 
@@ -164,7 +168,6 @@
             <i class="fa-solid fa-play"></i>
         </div>
 
-        <!-- NOVO PAINEL DE DÍGITOS (GRÁFICO DE BARRAS) -->
         <div class="digits-panel">
             <div class="digits-header">
                 <span>Last Digits: <span id="last-digit-text">-</span></span>
@@ -249,7 +252,6 @@
         let ws;
         let isRunning = false;
 
-        // Gera as colunas do gráfico ao carregar a página
         const chartContainer = document.getElementById('bar-chart-container');
         for (let i = 0; i <= 9; i++) {
             chartContainer.innerHTML += `
@@ -295,6 +297,14 @@
             ws.onclose = () => { alert("Conexão perdida. Atualize a página."); };
         }
 
+        // Função chamada pelo Menu de Seleção de Estratégia
+        function changeStrategy() {
+            const strat = document.getElementById('strategy-select').value;
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ action: "set_strategy", strategy: strat }));
+            }
+        }
+
         function updateDashboard(data) {
             document.getElementById('val-balance').innerText = `$ ${data.balance.toFixed(2)} USD`;
             const profitEl = document.getElementById('val-profit');
@@ -317,38 +327,28 @@
         function updateChart(ticks) {
             if(ticks.length === 0) return;
             
-            // Atualiza o último dígito no cabeçalho
             document.getElementById('last-digit-text').innerText = ticks[ticks.length - 1];
 
-            // Calcula a quantidade de cada dígito
             let counts = {0:0, 1:0, 2:0, 3:0, 4:0, 5:0, 6:0, 7:0, 8:0, 9:0};
             ticks.forEach(t => counts[t]++);
 
-            // Pega o número que mais saiu para pintar de verde
             let maxCount = Math.max(...Object.values(counts));
 
             for (let i = 0; i <= 9; i++) {
                 let count = counts[i];
-                let pct = Math.round((count / ticks.length) * 100); // Ex: 16, 20, 4
+                let pct = Math.round((count / ticks.length) * 100); 
 
                 let pctEl = document.getElementById(`pct-${i}`);
                 let barEl = document.getElementById(`bar-${i}`);
 
                 pctEl.innerText = `${pct}%`;
-
-                // Reseta as cores
                 pctEl.className = 'bar-pct';
                 barEl.className = 'bar-fill';
 
-                // Aplica Lógica Visual do Gráfico
                 if (pct === 0) {
-                    // Linha plana vermelha se for 0%
                     barEl.classList.add('red');
                 } else {
-                    // Ajusta a altura da barra. O multiplicador ajusta visualmente as barras no track
                     barEl.style.height = `${Math.min(pct * 4, 100)}%`; 
-                    
-                    // Se for a maior porcentagem, pinta de verde
                     if (count === maxCount && count > 0) {
                         barEl.classList.add('green');
                         pctEl.classList.add('green');
