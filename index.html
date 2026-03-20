@@ -3,24 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Placa Curiosa - Bot Profissional</title>
+    <title>Placa Curiosa - Bot Turbo</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         :root {
-            --bg-main: #061930;
-            --bg-panel: #112642;
-            --bg-header: #020e1e;
-            --text-main: #ffffff;
-            --text-muted: #8b9bb4;
-            --green: #2ecc71;
-            --red: #e74c3c;
-            --blue-accent: #0088ff;
-            --orange: #f39c12;
-            --border: #1e3557;
-            --bar-bg: #e2e8f0;
+            --bg-main: #061930; --bg-panel: #112642; --bg-header: #020e1e;
+            --text-main: #ffffff; --text-muted: #8b9bb4; --green: #2ecc71;
+            --red: #e74c3c; --blue-accent: #0088ff; --orange: #f39c12;
+            --border: #1e3557; --bar-bg: #e2e8f0;
         }
 
-        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', sans-serif; }
         body { background-color: var(--bg-main); color: var(--text-main); height: 100vh; display: flex; flex-direction: column; overflow-x: hidden;}
 
         #login-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; background: var(--bg-main); z-index: 1000; position: absolute; width: 100%; top:0; left:0;}
@@ -55,18 +48,16 @@
         .digits-panel { background: #1a1a1a; border-radius: 8px; padding: 15px; border: 1px solid #333; margin-bottom: 15px; }
         .digits-header { display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 14px; font-weight: bold; }
         
-        /* Gráfico Barras (Megatron / Halikina) */
         .bar-chart-container { display: flex; justify-content: space-between; align-items: flex-end; height: 110px; margin-top: 15px; padding: 0 5px; }
         .bar-col { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; width: 8%; height: 100%; }
-        .bar-pct { font-size: 10px; font-weight: bold; margin-bottom: 5px; color: white; transition: 0.3s;}
+        .bar-pct { font-size: 10px; font-weight: bold; margin-bottom: 5px; color: white; transition: 0.2s;}
         .bar-pct.green { color: var(--green); }
         .bar-track { width: 100%; height: 70px; display: flex; align-items: flex-end; justify-content: center; }
-        .bar-fill { width: 100%; background: var(--bar-bg); border-radius: 2px 2px 0 0; transition: height 0.3s ease, background 0.3s ease; }
+        .bar-fill { width: 100%; background: var(--bar-bg); border-radius: 2px 2px 0 0; transition: height 0.2s ease; }
         .bar-fill.green { background: var(--green); }
         .bar-fill.red { background: var(--red); height: 2px !important; border-radius: 0; }
         .bar-label { font-size: 10px; font-weight: bold; margin-top: 5px; color: white; }
 
-        /* Gráfico Linhas (Louco) */
         #tick-chart-container { display: none; width: 100%; height: 110px; position: relative; margin-top:15px; }
         canvas { width: 100%; height: 100%; }
 
@@ -85,7 +76,6 @@
         .status-node.active .node-dot { background: white; box-shadow: 0 0 8px white; }
         .status-node.active .node-label { color: white; }
 
-        /* CONTROLES MANUAIS */
         #manual-controls { display: none; margin-bottom: 20px; background: var(--bg-panel); border-radius: 8px; padding: 15px; border: 1px solid var(--border); }
         .manual-title { font-size: 12px; color: var(--text-muted); margin-bottom: 10px; text-align: center; font-weight: bold;}
         .manual-grid { display: flex; gap: 10px; }
@@ -123,7 +113,7 @@
 
     <div id="login-screen">
         <div class="login-box">
-            <h1>Placa Curiosa Pro</h1>
+            <h1>Placa Curiosa Turbo</h1>
             <input type="text" id="api-token" placeholder="Insira seu Token da Deriv" autocomplete="off">
             <button onclick="connectBot()">CONECTAR</button>
             <div id="error-msg" style="color:var(--red); margin-top:10px; font-size:12px; display:none;"></div>
@@ -131,14 +121,10 @@
     </div>
 
     <header id="main-header" style="display: none;">
-        <div class="logo">
-            <i class="fa-solid fa-p"></i> PLACA CURIOSA<br><span style="font-size: 8px; font-weight: normal;">OPERAÇÕES AUTOMATIZADAS</span>
-        </div>
-        <div class="menu-btn">MENU</div>
+        <div class="logo"><i class="fa-solid fa-bolt"></i> TURBO BOT</div>
     </header>
 
     <div id="dashboard-screen">
-        
         <div class="balance-panel">
             <div class="balance-box">
                 <div class="label">Balance</div>
@@ -157,10 +143,6 @@
 
         <div class="selectors">
             <div class="selector-box">
-                <div class="label">Account Type</div>
-                <select><option>Conta Real/Demo</option></select>
-            </div>
-            <div class="selector-box">
                 <div class="label">Estratégia</div>
                 <select id="strategy-select" onchange="changeStrategy()">
                     <option value="MEGATRON">Megatron (Differs 9)</option>
@@ -177,15 +159,11 @@
 
         <div class="digits-panel">
             <div class="digits-header">
-                <span id="chart-title">Análise Digitos 0-9: <span id="last-digit-text">-</span></span>
+                <span id="chart-title">Análise: <span id="last-digit-text">-</span></span>
                 <span style="color:var(--text-muted); font-weight:normal;">25 ticks</span>
             </div>
-            
             <div class="bar-chart-container" id="bar-chart-container"></div>
-            
-            <div id="tick-chart-container">
-                <canvas id="tickCanvas"></canvas>
-            </div>
+            <div id="tick-chart-container"><canvas id="tickCanvas"></canvas></div>
         </div>
 
         <div class="controls-row">
@@ -194,114 +172,56 @@
             
             <div class="status-tracker">
                 <div class="status-line"></div>
-                <div class="status-node" id="node-analyzing">
-                    <div class="node-dot"></div>
-                    <div class="node-label">ANALYZING</div>
-                </div>
-                <div class="status-node" id="node-open">
-                    <div class="node-dot"></div>
-                    <div class="node-label">OPEN CONTRACT</div>
-                </div>
-                <div class="status-node" id="node-closed">
-                    <div class="node-dot"></div>
-                    <div class="node-label">CLOSED CONTRACT</div>
-                </div>
+                <div class="status-node" id="node-analyzing"><div class="node-dot"></div><div class="node-label">ANALYZING</div></div>
+                <div class="status-node" id="node-open"><div class="node-dot"></div><div class="node-label">OPEN</div></div>
+                <div class="status-node" id="node-closed"><div class="node-dot"></div><div class="node-label">CLOSED</div></div>
             </div>
         </div>
 
-        <!-- PAINEL MANUAL -->
         <div id="manual-controls">
-            <div class="manual-title">OPERAÇÃO MANUAL ATIVADA</div>
-            
+            <div class="manual-title">ATIRAR MANUALMENTE</div>
             <div class="manual-grid" id="manual-megatron">
-                <button class="btn-manual btn-differs" onclick="sendManualTrade('MEGATRON', null)"><i class="fa-solid fa-bullseye"></i> COMPRAR DIFFERS 9</button>
+                <button class="btn-manual btn-differs" onclick="sendManualTrade('MEGATRON', null)"><i class="fa-solid fa-bullseye"></i> DIFFERS 9</button>
             </div>
-
             <div class="manual-grid" id="manual-louco" style="display:none;">
-                <button class="btn-manual btn-call" onclick="sendManualTrade('LOUCO', 'CALL')"><i class="fa-solid fa-arrow-trend-up"></i> RISE (SOBE)</button>
-                <button class="btn-manual btn-put" onclick="sendManualTrade('LOUCO', 'PUT')"><i class="fa-solid fa-arrow-trend-down"></i> FALL (DESCE)</button>
+                <button class="btn-manual btn-call" onclick="sendManualTrade('LOUCO', 'CALL')"><i class="fa-solid fa-arrow-up"></i> RISE</button>
+                <button class="btn-manual btn-put" onclick="sendManualTrade('LOUCO', 'PUT')"><i class="fa-solid fa-arrow-down"></i> FALL</button>
             </div>
-            
             <div class="manual-grid" id="manual-halikina" style="display:none;">
-                <button class="btn-manual btn-over" onclick="sendManualTrade('HALIKINA', 'DIGITOVER')"><i class="fa-solid fa-arrow-up-9-1"></i> BUY OVER</button>
-                <button class="btn-manual btn-under" onclick="sendManualTrade('HALIKINA', 'DIGITUNDER')"><i class="fa-solid fa-arrow-down-9-1"></i> BUY UNDER</button>
+                <button class="btn-manual btn-over" onclick="sendManualTrade('HALIKINA', 'DIGITOVER')"><i class="fa-solid fa-angle-up"></i> OVER</button>
+                <button class="btn-manual btn-under" onclick="sendManualTrade('HALIKINA', 'DIGITUNDER')"><i class="fa-solid fa-angle-down"></i> UNDER</button>
             </div>
-        </div>
-
-        <div class="tabs">
-            <div class="tab active">TRADER</div>
-            <div class="tab">NOTIFICAÇÕES (0)</div>
-            <div style="padding:10px; cursor:pointer;" onclick="resetStats()"><i class="fa-solid fa-trash" style="color:var(--text-muted)"></i></div>
         </div>
 
         <table class="history-table">
-            <thead>
-                <tr>
-                    <th>TYPE</th>
-                    <th>FINAL TICK</th>
-                    <th>PRICE</th>
-                    <th>RESULT</th>
-                </tr>
-            </thead>
+            <thead><tr><th>TYPE</th><th>TICK</th><th>PRICE</th><th>RESULT</th></tr></thead>
             <tbody id="history-body">
                 <tr><td colspan="4" style="text-align:center; color:var(--text-muted); padding:20px;">No trades yet</td></tr>
             </tbody>
         </table>
     </div>
 
-    <!-- MODAL DE CONFIGURAÇÃO -->
+    <!-- MODAL -->
     <div id="settings-modal">
         <div class="modal-content">
             <h2>Gestão de Risco</h2>
-            <div class="input-group">
-                <label>Stake Inicial (USD)</label>
-                <input type="number" id="inp-stake" value="1.00" step="0.50">
-            </div>
-            <div class="input-group">
-                <label>Stake Recuperação (USD)</label>
-                <input type="number" id="inp-recovery" value="2.50" step="0.50">
-            </div>
-            <div class="input-group">
-                <label>Stop Loss (USD)</label>
-                <input type="number" id="inp-loss" value="10.00" step="1.00">
-            </div>
-            <div class="input-group">
-                <label>Take Profit (USD)</label>
-                <input type="number" id="inp-profit" value="10.00" step="1.00">
-            </div>
+            <div class="input-group"><label>Stake Inicial (USD)</label><input type="number" id="inp-stake" value="1.00" step="0.50"></div>
+            <div class="input-group"><label>Stake Recuperação</label><input type="number" id="inp-recovery" value="2.50" step="0.50"></div>
+            <div class="input-group"><label>Stop Loss</label><input type="number" id="inp-loss" value="10.00" step="1.00"></div>
+            <div class="input-group"><label>Take Profit</label><input type="number" id="inp-profit" value="10.00" step="1.00"></div>
 
-            <!-- MENU EXCLUSIVO: LOUCO -->
             <div id="louco-settings" style="display: none;">
                 <div class="section-title">Rise / Fall (Louco)</div>
-                <div class="input-group">
-                    <label>Tempo de Contrato</label>
-                    <select id="inp-louco-unit"><option value="t">Ticks</option><option value="m">Minutos</option></select>
-                </div>
-                <div class="input-group">
-                    <label>Valor (1 a 5)</label>
-                    <input type="number" id="inp-louco-val" value="1" min="1" max="5">
-                </div>
+                <div class="input-group"><label>Tempo</label><select id="inp-louco-unit"><option value="t">Ticks</option><option value="m">Minutos</option></select></div>
+                <div class="input-group"><label>Valor (1 a 5)</label><input type="number" id="inp-louco-val" value="1"></div>
             </div>
 
-            <!-- MENU EXCLUSIVO: HALIKINA -->
             <div id="halikina-settings" style="display: none;">
                 <div class="section-title">Over / Under (Halikina)</div>
-                <div class="input-group">
-                    <label>Modo Automático</label>
-                    <select id="inp-hali-type"><option value="OVER">Atirar em OVER</option><option value="UNDER">Atirar em UNDER</option></select>
-                </div>
-                <div class="input-group">
-                    <label>Barreira (Dígito Alvo 0 a 9)</label>
-                    <input type="number" id="inp-hali-barrier" value="4" min="0" max="9">
-                </div>
-                <div class="input-group">
-                    <label>Tempo de Contrato</label>
-                    <select id="inp-hali-unit"><option value="t">Ticks</option><option value="m">Minutos</option></select>
-                </div>
-                <div class="input-group">
-                    <label>Valor (1 a 5)</label>
-                    <input type="number" id="inp-hali-val" value="1" min="1" max="5">
-                </div>
+                <div class="input-group"><label>Auto Mode Atira Em:</label><select id="inp-hali-type"><option value="OVER">OVER</option><option value="UNDER">UNDER</option></select></div>
+                <div class="input-group"><label>Barreira (Dígito Alvo)</label><input type="number" id="inp-hali-barrier" value="4"></div>
+                <div class="input-group"><label>Tempo</label><select id="inp-hali-unit"><option value="t">Ticks</option><option value="m">Minutos</option></select></div>
+                <div class="input-group"><label>Valor (1 a 5)</label><input type="number" id="inp-hali-val" value="1"></div>
             </div>
 
             <div class="modal-buttons">
@@ -319,31 +239,17 @@
 
         const chartContainer = document.getElementById('bar-chart-container');
         for (let i = 0; i <= 9; i++) {
-            chartContainer.innerHTML += `
-                <div class="bar-col">
-                    <div class="bar-pct" id="pct-${i}">0%</div>
-                    <div class="bar-track">
-                        <div class="bar-fill" id="bar-${i}" style="height: 0%"></div>
-                    </div>
-                    <div class="bar-label">${i}</div>
-                </div>
-            `;
+            chartContainer.innerHTML += `<div class="bar-col"><div class="bar-pct" id="pct-${i}">0%</div><div class="bar-track"><div class="bar-fill" id="bar-${i}" style="height: 0%"></div></div><div class="bar-label">${i}</div></div>`;
         }
         
         function connectBot() {
             const token = document.getElementById('api-token').value;
             if (!token) return;
-
             document.getElementById('error-msg').style.display = 'none';
-            const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
-            const host = window.location.host;
-            ws = new WebSocket(protocol + host + '/ws');
-
-            ws.onopen = () => { ws.send(JSON.stringify({ action: "connect", token: token })); };
-
+            ws = new WebSocket((window.location.protocol === 'https:' ? 'wss://' : 'ws://') + window.location.host + '/ws');
+            ws.onopen = () => ws.send(JSON.stringify({ action: "connect", token: token }));
             ws.onmessage = (event) => {
                 const msg = JSON.parse(event.data);
-
                 if (msg.type === "auth_success") {
                     document.getElementById('login-screen').style.display = 'none';
                     document.getElementById('main-header').style.display = 'flex';
@@ -353,203 +259,135 @@
                     document.getElementById('error-msg').innerText = msg.msg;
                     document.getElementById('error-msg').style.display = 'block';
                 }
-                else if (msg.type === "dashboard") { updateDashboard(msg); }
+                else if (msg.type === "dashboard") updateDashboard(msg);
                 else if (msg.type === "ticks_update") { 
-                    updateBarChart(msg.ticks);
-                    drawLineChart(msg.prices);
+                    // Otimização: Só desenha o gráfico que está visível
+                    if(currentStrat === "MEGATRON" || currentStrat === "HALIKINA") updateBarChart(msg.ticks);
+                    else if (currentStrat === "LOUCO") requestAnimationFrame(() => drawLineChart(msg.prices));
                 }
-                else if (msg.type === "status_update") { updateStatusBar(msg.status); }
-                else if (msg.type === "trade_history") { addTradeToHistory(msg.data); }
+                else if (msg.type === "status_update") updateStatusBar(msg.status);
+                else if (msg.type === "trade_history") addTradeToHistory(msg.data);
             };
         }
 
         function toggleAutoMode() {
             isAutoMode = !isAutoMode;
             const btn = document.getElementById('btn-auto-manual');
-            
-            if (isAutoMode) {
-                btn.classList.add('active');
-                btn.innerHTML = '<i class="fa-solid fa-robot"></i> MODO AUTOMÁTICO';
-            } else {
-                btn.classList.remove('active');
-                btn.innerHTML = '<i class="fa-solid fa-hand"></i> MODO MANUAL';
-            }
-            
+            btn.className = isAutoMode ? 'auto-btn active' : 'auto-btn';
+            btn.innerHTML = isAutoMode ? '<i class="fa-solid fa-robot"></i> MODO AUTOMÁTICO' : '<i class="fa-solid fa-hand"></i> MODO MANUAL';
             checkManualControlsVisibility();
-
-            if (ws && ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({ action: "toggle_auto", auto: isAutoMode }));
-            }
+            if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ action: "toggle_auto", auto: isAutoMode }));
         }
 
         function toggleEngine() {
             isEngineRunning = !isEngineRunning;
-            
-            const btn = document.getElementById('btn-play-pause');
-            const icon = document.getElementById('play-icon');
-            
-            if (isEngineRunning) {
-                btn.classList.add('playing');
-            } else {
-                btn.classList.remove('playing');
-                updateStatusBar("IDLE");
-            }
-
+            document.getElementById('btn-play-pause').className = isEngineRunning ? 'btn-icon btn-play playing' : 'btn-icon btn-play';
+            if(!isEngineRunning) updateStatusBar("IDLE");
             checkManualControlsVisibility();
-
-            if (ws && ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({ action: isEngineRunning ? 'start' : 'stop' }));
-            }
+            if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ action: isEngineRunning ? 'start' : 'stop' }));
         }
 
         function checkManualControlsVisibility() {
-            const manualPanel = document.getElementById('manual-controls');
-            if (!isAutoMode && isEngineRunning) {
-                manualPanel.style.display = 'block';
-            } else {
-                manualPanel.style.display = 'none';
-            }
+            document.getElementById('manual-controls').style.display = (!isAutoMode && isEngineRunning) ? 'block' : 'none';
         }
 
-        function sendManualTrade(strat, contract_or_direction) {
+        function sendManualTrade(strat, contract) {
             if (ws && ws.readyState === WebSocket.OPEN) {
-                let payload = { action: "manual_trade", strat: strat };
-                if (strat === "LOUCO") payload.direction = contract_or_direction;
-                if (strat === "HALIKINA") payload.contract = contract_or_direction;
-                ws.send(JSON.stringify(payload));
+                let p = { action: "manual_trade", strat: strat };
+                if (strat === "LOUCO") p.direction = contract;
+                if (strat === "HALIKINA") p.contract = contract;
+                ws.send(JSON.stringify(p));
             }
         }
 
         function changeStrategy() {
             currentStrat = document.getElementById('strategy-select').value;
+            ['manual-megatron', 'manual-louco', 'manual-halikina'].forEach(id => document.getElementById(id).style.display = 'none');
             
-            // Oculta todos os manuais
-            document.getElementById('manual-megatron').style.display = 'none';
-            document.getElementById('manual-louco').style.display = 'none';
-            document.getElementById('manual-halikina').style.display = 'none';
-            
-            // Troca os Gráficos e ativa botões
-            if(currentStrat === "MEGATRON") {
+            if(currentStrat === "MEGATRON" || currentStrat === "HALIKINA") {
                 document.getElementById('bar-chart-container').style.display = 'flex';
                 document.getElementById('tick-chart-container').style.display = 'none';
-                document.getElementById('chart-title').innerHTML = `Análise Digitos 0-9: <span id="last-digit-text">-</span>`;
-                document.getElementById('manual-megatron').style.display = 'flex';
-            } 
-            else if (currentStrat === "LOUCO") {
+                document.getElementById(currentStrat === "MEGATRON" ? 'manual-megatron' : 'manual-halikina').style.display = 'flex';
+            } else if (currentStrat === "LOUCO") {
                 document.getElementById('bar-chart-container').style.display = 'none';
                 document.getElementById('tick-chart-container').style.display = 'block';
-                document.getElementById('chart-title').innerHTML = `Worm Chart (Rise/Fall): <span id="last-digit-text">-</span>`;
                 document.getElementById('manual-louco').style.display = 'flex';
             }
-            else if (currentStrat === "HALIKINA") {
-                document.getElementById('bar-chart-container').style.display = 'flex';
-                document.getElementById('tick-chart-container').style.display = 'none';
-                document.getElementById('chart-title').innerHTML = `Análise Over/Under: <span id="last-digit-text">-</span>`;
-                document.getElementById('manual-halikina').style.display = 'flex';
-            }
-
-            if (ws && ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({ action: "set_strategy", strategy: currentStrat }));
-            }
+            if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ action: "set_strategy", strategy: currentStrat }));
         }
 
         function updateDashboard(data) {
-            document.getElementById('val-balance').innerText = `$ ${data.balance.toFixed(2)} USD`;
-            const profitEl = document.getElementById('val-profit');
-            const sign = data.profit >= 0 ? '$ ' : '-$ ';
-            profitEl.innerText = `${sign}${Math.abs(data.profit).toFixed(2)}`;
-            profitEl.className = 'value profit-value ' + (data.profit >= 0 ? '' : 'negative');
+            // Otimização: Só atualiza se o valor for diferente
+            const balStr = `$ ${data.balance.toFixed(2)} USD`;
+            const balEl = document.getElementById('val-balance');
+            if(balEl.innerText !== balStr) balEl.innerText = balStr;
+
+            const profEl = document.getElementById('val-profit');
+            const profStr = `${data.profit >= 0 ? '$ ' : '-$ '}${Math.abs(data.profit).toFixed(2)}`;
+            if(profEl.innerText !== profStr) profEl.innerText = profStr;
+            profEl.className = 'value profit-value ' + (data.profit >= 0 ? '' : 'negative');
             
             document.getElementById('val-wins').innerText = data.wins;
             document.getElementById('val-losses').innerText = data.losses;
 
             updateStatusBar(data.status);
-
-            if(data.status.includes("STOPPED") && isEngineRunning) {
-                isEngineRunning = false;
-                document.getElementById('btn-play-pause').classList.remove('playing');
-                checkManualControlsVisibility();
-                alert(data.status); 
-            }
+            if(data.status.includes("STOPPED") && isEngineRunning) { toggleEngine(); alert(data.status); }
         }
 
         function updateBarChart(ticks) {
-            if(ticks.length === 0 || (currentStrat !== "MEGATRON" && currentStrat !== "HALIKINA")) return;
+            if(ticks.length === 0) return;
             document.getElementById('last-digit-text').innerText = ticks[ticks.length - 1];
             let counts = {0:0, 1:0, 2:0, 3:0, 4:0, 5:0, 6:0, 7:0, 8:0, 9:0};
             ticks.forEach(t => counts[t]++);
             let maxCount = Math.max(...Object.values(counts));
 
             for (let i = 0; i <= 9; i++) {
-                let count = counts[i];
-                let pct = Math.round((count / ticks.length) * 100); 
+                let pct = Math.round((counts[i] / ticks.length) * 100); 
                 let pctEl = document.getElementById(`pct-${i}`);
                 let barEl = document.getElementById(`bar-${i}`);
-                pctEl.innerText = `${pct}%`;
-                pctEl.className = 'bar-pct';
-                barEl.className = 'bar-fill';
-                if (pct === 0) { barEl.classList.add('red'); } 
+                
+                // Otimização DOM: Só escreve se mudou
+                const newPctStr = `${pct}%`;
+                if(pctEl.innerText !== newPctStr) pctEl.innerText = newPctStr;
+                
+                pctEl.className = (counts[i] === maxCount && counts[i] > 0) ? 'bar-pct green' : 'bar-pct';
+                
+                if (pct === 0) { barEl.className = 'bar-fill red'; } 
                 else {
-                    barEl.style.height = `${Math.min(pct * 4, 100)}%`; 
-                    if (count === maxCount && count > 0) {
-                        barEl.classList.add('green');
-                        pctEl.classList.add('green');
-                    }
+                    barEl.className = (counts[i] === maxCount && counts[i] > 0) ? 'bar-fill green' : 'bar-fill';
+                    const newHeight = `${Math.min(pct * 4, 100)}%`;
+                    if(barEl.style.height !== newHeight) barEl.style.height = newHeight;
                 }
             }
         }
 
         function drawLineChart(prices) {
-            if(prices.length === 0 || currentStrat !== "LOUCO") return;
+            if(prices.length === 0) return;
             document.getElementById('last-digit-text').innerText = prices[prices.length - 1].toFixed(2);
-
             const canvas = document.getElementById('tickCanvas');
             const ctx = canvas.getContext('2d');
-            
             canvas.width = canvas.parentElement.clientWidth;
             canvas.height = canvas.parentElement.clientHeight;
             ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            const min = Math.min(...prices), max = Math.max(...prices), range = max - min || 1;
+            const pad = 10, w = canvas.width - (pad * 2), h = canvas.height - (pad * 2), step = w / (prices.length - 1);
 
-            const minPrice = Math.min(...prices);
-            const maxPrice = Math.max(...prices);
-            const range = maxPrice - minPrice || 1;
-
-            const padding = 10;
-            const drawableWidth = canvas.width - (padding * 2);
-            const drawableHeight = canvas.height - (padding * 2);
-            const stepX = drawableWidth / (prices.length - 1);
-
-            ctx.beginPath();
-            ctx.lineWidth = 3;
-            ctx.strokeStyle = "#0088ff"; 
-            ctx.lineJoin = 'round';
-
+            ctx.beginPath(); ctx.lineWidth = 3; ctx.strokeStyle = "#0088ff"; ctx.lineJoin = 'round';
             for(let i=0; i<prices.length; i++) {
-                const x = padding + (i * stepX);
-                const y = padding + drawableHeight - (((prices[i] - minPrice) / range) * drawableHeight);
-                if (i === 0) ctx.moveTo(x, y);
-                else ctx.lineTo(x, y);
+                const x = pad + (i * step), y = pad + h - (((prices[i] - min) / range) * h);
+                i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
             }
             ctx.stroke();
 
-            const lastX = padding + ((prices.length - 1) * stepX);
-            const lastY = padding + drawableHeight - (((prices[prices.length - 1] - minPrice) / range) * drawableHeight);
-            
-            ctx.beginPath();
-            ctx.arc(lastX, lastY, 5, 0, Math.PI * 2);
-            if (prices.length > 1 && prices[prices.length-1] >= prices[prices.length-2]) {
-                ctx.fillStyle = "#2ecc71"; 
-            } else {
-                ctx.fillStyle = "#e74c3c"; 
-            }
+            const ly = pad + h - (((prices[prices.length - 1] - min) / range) * h);
+            ctx.beginPath(); ctx.arc(pad + ((prices.length - 1) * step), ly, 5, 0, Math.PI * 2);
+            ctx.fillStyle = (prices.length > 1 && prices[prices.length-1] >= prices[prices.length-2]) ? "#2ecc71" : "#e74c3c"; 
             ctx.fill();
         }
 
         function updateStatusBar(status) {
-            document.getElementById('node-analyzing').classList.remove('active');
-            document.getElementById('node-open').classList.remove('active');
-            document.getElementById('node-closed').classList.remove('active');
-
+            ['node-analyzing', 'node-open', 'node-closed'].forEach(id => document.getElementById(id).classList.remove('active'));
             if(status === "ANALYZING") document.getElementById('node-analyzing').classList.add('active');
             else if(status === "OPEN_CONTRACT") document.getElementById('node-open').classList.add('active');
             else if(status === "CLOSED_CONTRACT") document.getElementById('node-closed').classList.add('active');
@@ -559,31 +397,17 @@
             const tbody = document.getElementById('history-body');
             if(tbody.innerHTML.includes("No trades yet")) tbody.innerHTML = '';
             const row = document.createElement('tr');
-            const isWin = trade.profit > 0;
-            row.innerHTML = `
-                <td>${trade.type.substring(0,6)}</td>
-                <td>${trade.tick}</td>
-                <td>$ ${trade.stake.toFixed(2)}</td>
-                <td class="${isWin ? 'win' : 'loss'}">${isWin ? '+' : ''}$ ${trade.profit.toFixed(2)}</td>
-            `;
+            row.innerHTML = `<td>${trade.type.substring(0,6)}</td><td>${trade.tick}</td><td>$ ${trade.stake.toFixed(2)}</td><td class="${trade.profit > 0 ? 'win' : 'loss'}">${trade.profit > 0 ? '+' : ''}$ ${trade.profit.toFixed(2)}</td>`;
             tbody.prepend(row);
             if(tbody.children.length > 50) tbody.lastChild.remove();
-        }
-
-        function resetStats() {
-            document.getElementById('history-body').innerHTML = '<tr><td colspan="4" style="text-align:center; color:var(--text-muted); padding:20px;">No trades yet</td></tr>';
-            if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ action: 'reset_stats' })); }
         }
 
         function openSettings() { 
             document.getElementById('louco-settings').style.display = (currentStrat === "LOUCO") ? 'block' : 'none';
             document.getElementById('halikina-settings').style.display = (currentStrat === "HALIKINA") ? 'block' : 'none';
-            
             document.getElementById('settings-modal').style.display = 'flex'; 
         }
-        
         function closeSettings() { document.getElementById('settings-modal').style.display = 'none'; }
-
         function saveSettings() {
             if (ws && ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({
@@ -592,10 +416,8 @@
                     recovery_stake: document.getElementById('inp-recovery').value,
                     stop_loss: document.getElementById('inp-loss').value,
                     take_profit: document.getElementById('inp-profit').value,
-                    
                     louco_unit: document.getElementById('inp-louco-unit').value,
                     louco_val: document.getElementById('inp-louco-val').value,
-                    
                     halikina_type: document.getElementById('inp-hali-type').value,
                     halikina_barrier: document.getElementById('inp-hali-barrier').value,
                     halikina_unit: document.getElementById('inp-hali-unit').value,
