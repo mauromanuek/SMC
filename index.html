@@ -80,18 +80,19 @@
         .manual-title { font-size: 12px; color: var(--text-muted); margin-bottom: 10px; text-align: center; font-weight: bold;}
         .manual-grid { display: flex; gap: 10px; }
         .btn-manual { flex:1; padding: 12px; font-weight: bold; border-radius: 6px; border: none; cursor: pointer; color: white; transition: 0.2s;}
+        
+        /* CORES ESPECÍFICAS DE CADA ESTRATÉGIA */
+        .btn-differs { background: var(--blue-accent); } .btn-differs:hover{ background: #0077e6; }
         .btn-call { background: var(--green); } .btn-call:hover{ background: #27ae60; }
         .btn-put { background: var(--red); } .btn-put:hover{ background: #c0392b; }
-        .btn-differs { background: var(--blue-accent); } .btn-differs:hover{ background: #0077e6; }
-        .btn-over { background: var(--blue-accent); } .btn-over:hover{ background: #0077e6; }
-        .btn-under { background: var(--orange); } .btn-under:hover{ background: #e67e22; }
+        .btn-halikina { background: #8e44ad; } .btn-halikina:hover{ background: #732d91; }
+        .btn-flash { background: var(--orange); } .btn-flash:hover{ background: #d35400; }
 
         .tabs { display: flex; margin-bottom: 10px; align-items: center; justify-content: space-between;}
         .tabs-group { display: flex; flex: 1; }
         .tab { flex: 1; text-align: center; padding: 12px; font-size: 12px; font-weight: bold; cursor: pointer; border-bottom: 2px solid transparent; color: var(--text-muted); }
         .tab.active { color: white; border-bottom-color: var(--blue-accent); background: linear-gradient(0deg, rgba(0,136,255,0.1) 0%, transparent 100%); }
         
-        /* BOTÃO DE LIXEIRA */
         .btn-trash { padding: 12px 15px; cursor: pointer; border-bottom: 2px solid transparent; transition: 0.2s;}
         .btn-trash:hover i { color: var(--red) !important; }
         
@@ -153,8 +154,8 @@
                 <select id="strategy-select" onchange="changeStrategy()">
                     <option value="MEGATRON">Megatron (Differs 9)</option>
                     <option value="LOUCO">Louco (Rise/Fall)</option>
-                    <option value="HALIKINA">Halikina (Over/Under)</option>
-                    <option value="FLASH">Flash</option>
+                    <option value="HALIKINA">Halikina (Over 1)</option>
+                    <option value="FLASH">Flash (Over 2)</option>
                 </select>
             </div>
         </div>
@@ -165,7 +166,7 @@
 
         <div class="digits-panel">
             <div class="digits-header">
-                <span id="chart-title">Análise: <span id="last-digit-text">-</span></span>
+                <span id="chart-title">Análise Digitos 0-9: <span id="last-digit-text">-</span></span>
                 <span style="color:var(--text-muted); font-weight:normal;">25 ticks</span>
             </div>
             <div class="bar-chart-container" id="bar-chart-container"></div>
@@ -186,20 +187,25 @@
 
         <div id="manual-controls">
             <div class="manual-title">ATIRAR MANUALMENTE</div>
+            
             <div class="manual-grid" id="manual-megatron">
                 <button class="btn-manual btn-differs" onclick="sendManualTrade('MEGATRON', null)"><i class="fa-solid fa-bullseye"></i> DIFFERS 9</button>
             </div>
+            
             <div class="manual-grid" id="manual-louco" style="display:none;">
                 <button class="btn-manual btn-call" onclick="sendManualTrade('LOUCO', 'CALL')"><i class="fa-solid fa-arrow-up"></i> RISE</button>
                 <button class="btn-manual btn-put" onclick="sendManualTrade('LOUCO', 'PUT')"><i class="fa-solid fa-arrow-down"></i> FALL</button>
             </div>
+            
             <div class="manual-grid" id="manual-halikina" style="display:none;">
-                <button class="btn-manual btn-over" onclick="sendManualTrade('HALIKINA', 'DIGITOVER')"><i class="fa-solid fa-angle-up"></i> OVER</button>
-                <button class="btn-manual btn-under" onclick="sendManualTrade('HALIKINA', 'DIGITUNDER')"><i class="fa-solid fa-angle-down"></i> UNDER</button>
+                <button class="btn-manual btn-halikina" onclick="sendManualTrade('HALIKINA', null)"><i class="fa-solid fa-angle-up"></i> OVER 1</button>
+            </div>
+            
+            <div class="manual-grid" id="manual-flash" style="display:none;">
+                <button class="btn-manual btn-flash" onclick="sendManualTrade('FLASH', null)"><i class="fa-solid fa-angle-double-up"></i> OVER 2</button>
             </div>
         </div>
 
-        <!-- ABAS COM A LIXEIRA DE VOLTA -->
         <div class="tabs">
             <div class="tabs-group">
                 <div class="tab active">TRADER</div>
@@ -233,14 +239,6 @@
                 <div class="input-group"><label>Valor (1 a 5)</label><input type="number" id="inp-louco-val" value="1"></div>
             </div>
 
-            <div id="halikina-settings" style="display: none;">
-                <div class="section-title">Over / Under (Halikina)</div>
-                <div class="input-group"><label>Auto Mode Atira Em:</label><select id="inp-hali-type"><option value="OVER">OVER</option><option value="UNDER">UNDER</option></select></div>
-                <div class="input-group"><label>Barreira (Dígito Alvo)</label><input type="number" id="inp-hali-barrier" value="4"></div>
-                <div class="input-group"><label>Tempo</label><select id="inp-hali-unit"><option value="t">Ticks</option><option value="m">Minutos</option></select></div>
-                <div class="input-group"><label>Valor (1 a 5)</label><input type="number" id="inp-hali-val" value="1"></div>
-            </div>
-
             <div class="modal-buttons">
                 <button class="btn-modal btn-cancel" onclick="closeSettings()">Cancelar</button>
                 <button class="btn-modal btn-save" onclick="saveSettings()">Salvar</button>
@@ -253,33 +251,23 @@
         let isEngineRunning = false;
         let isAutoMode = false;
         let currentStrat = "MEGATRON";
-        let wakeLock = null; // Variável para a tela não apagar
+        let wakeLock = null; 
 
         const chartContainer = document.getElementById('bar-chart-container');
         for (let i = 0; i <= 9; i++) {
             chartContainer.innerHTML += `<div class="bar-col"><div class="bar-pct" id="pct-${i}">0%</div><div class="bar-track"><div class="bar-fill" id="bar-${i}" style="height: 0%"></div></div><div class="bar-label">${i}</div></div>`;
         }
         
-        // FUNÇÃO PARA MANTER A TELA LIGADA
         async function requestWakeLock() {
             try {
                 if ('wakeLock' in navigator) {
                     wakeLock = await navigator.wakeLock.request('screen');
                     document.getElementById('wake-status').style.display = 'block';
-                    wakeLock.addEventListener('release', () => {
-                        console.log('Screen Wake Lock released');
-                    });
                 }
-            } catch (err) {
-                console.log('Wake Lock Error:', err);
-            }
+            } catch (err) {}
         }
-
-        // Renova o WakeLock caso o usuário mude de aba e volte
         document.addEventListener('visibilitychange', async () => {
-            if (wakeLock !== null && document.visibilityState === 'visible') {
-                await requestWakeLock();
-            }
+            if (wakeLock !== null && document.visibilityState === 'visible') await requestWakeLock();
         });
 
         function connectBot() {
@@ -295,7 +283,7 @@
                     document.getElementById('login-screen').style.display = 'none';
                     document.getElementById('main-header').style.display = 'flex';
                     document.getElementById('dashboard-screen').style.display = 'block';
-                    requestWakeLock(); // Pede para a tela ficar ligada assim que loga
+                    requestWakeLock();
                 }
                 else if (msg.type === "auth_error") {
                     document.getElementById('error-msg').innerText = msg.msg;
@@ -303,8 +291,8 @@
                 }
                 else if (msg.type === "dashboard") updateDashboard(msg);
                 else if (msg.type === "ticks_update") { 
-                    if(currentStrat === "MEGATRON" || currentStrat === "HALIKINA") updateBarChart(msg.ticks);
-                    else if (currentStrat === "LOUCO") requestAnimationFrame(() => drawLineChart(msg.prices));
+                    if(currentStrat !== "LOUCO") updateBarChart(msg.ticks);
+                    else requestAnimationFrame(() => drawLineChart(msg.prices));
                 }
                 else if (msg.type === "status_update") updateStatusBar(msg.status);
                 else if (msg.type === "trade_history") addTradeToHistory(msg.data);
@@ -336,22 +324,25 @@
             if (ws && ws.readyState === WebSocket.OPEN) {
                 let p = { action: "manual_trade", strat: strat };
                 if (strat === "LOUCO") p.direction = contract;
-                if (strat === "HALIKINA") p.contract = contract;
                 ws.send(JSON.stringify(p));
             }
         }
 
         function changeStrategy() {
             currentStrat = document.getElementById('strategy-select').value;
-            ['manual-megatron', 'manual-louco', 'manual-halikina'].forEach(id => document.getElementById(id).style.display = 'none');
+            ['manual-megatron', 'manual-louco', 'manual-halikina', 'manual-flash'].forEach(id => document.getElementById(id).style.display = 'none');
             
-            if(currentStrat === "MEGATRON" || currentStrat === "HALIKINA") {
+            if(currentStrat === "MEGATRON" || currentStrat === "HALIKINA" || currentStrat === "FLASH") {
                 document.getElementById('bar-chart-container').style.display = 'flex';
                 document.getElementById('tick-chart-container').style.display = 'none';
-                document.getElementById(currentStrat === "MEGATRON" ? 'manual-megatron' : 'manual-halikina').style.display = 'flex';
+                document.getElementById('chart-title').innerHTML = `Análise Digitos 0-9: <span id="last-digit-text">-</span>`;
+                if(currentStrat === "MEGATRON") document.getElementById('manual-megatron').style.display = 'flex';
+                if(currentStrat === "HALIKINA") document.getElementById('manual-halikina').style.display = 'flex';
+                if(currentStrat === "FLASH") document.getElementById('manual-flash').style.display = 'flex';
             } else if (currentStrat === "LOUCO") {
                 document.getElementById('bar-chart-container').style.display = 'none';
                 document.getElementById('tick-chart-container').style.display = 'block';
+                document.getElementById('chart-title').innerHTML = `Worm Chart (Rise/Fall): <span id="last-digit-text">-</span>`;
                 document.getElementById('manual-louco').style.display = 'flex';
             }
             if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ action: "set_strategy", strategy: currentStrat }));
@@ -441,7 +432,6 @@
             if(tbody.children.length > 50) tbody.lastChild.remove();
         }
 
-        // LIXEIRA: Limpa a tela HTML e manda o Backend zerar variáveis
         function resetStats() {
             document.getElementById('history-body').innerHTML = '<tr><td colspan="4" style="text-align:center; color:var(--text-muted); padding:20px;">No trades yet</td></tr>';
             if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ action: 'reset_stats' })); }
@@ -449,10 +439,10 @@
 
         function openSettings() { 
             document.getElementById('louco-settings').style.display = (currentStrat === "LOUCO") ? 'block' : 'none';
-            document.getElementById('halikina-settings').style.display = (currentStrat === "HALIKINA") ? 'block' : 'none';
             document.getElementById('settings-modal').style.display = 'flex'; 
         }
         function closeSettings() { document.getElementById('settings-modal').style.display = 'none'; }
+        
         function saveSettings() {
             if (ws && ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({
@@ -462,11 +452,7 @@
                     stop_loss: document.getElementById('inp-loss').value,
                     take_profit: document.getElementById('inp-profit').value,
                     louco_unit: document.getElementById('inp-louco-unit').value,
-                    louco_val: document.getElementById('inp-louco-val').value,
-                    halikina_type: document.getElementById('inp-hali-type').value,
-                    halikina_barrier: document.getElementById('inp-hali-barrier').value,
-                    halikina_unit: document.getElementById('inp-hali-unit').value,
-                    halikina_val: document.getElementById('inp-hali-val').value
+                    louco_val: document.getElementById('inp-louco-val').value
                 }));
             }
             closeSettings();
