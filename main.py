@@ -25,7 +25,7 @@ class DerivBot:
         self.token = None
         self.running = False
         self.auto_mode = False 
-        self.bot_status = "ANALYZING"
+        self.bot_status = "ANALYZING" # Pode ser ANALYZING, OPEN_CONTRACT, COOLDOWN, PAUSED, STOPPED
         
         self.ticks = [] 
         self.raw_prices = [] 
@@ -41,15 +41,18 @@ class DerivBot:
         self.reanalyzing = False
         self.strategy = "MEGATRON" 
         
-        # Configurações Globais
         self.stake = 1.00
         self.recovery_stake = 2.50
         self.stop_loss = 10.00
         self.take_profit = 10.00
         
-        # Configurações Louco
         self.louco_duration_unit = "t" 
         self.louco_duration_value = 1  
+        
+        self.halikina_type = "OVER"
+        self.halikina_barrier = 4   
+        self.halikina_duration_unit = "t" 
+        self.halikina_duration_value = 1 
 
     async def connect_deriv(self, token):
         self.token = token
@@ -123,14 +126,17 @@ class DerivBot:
             "prices": self.raw_prices
         }))
 
-    # ANÁLISE MEGATRON (DIFFERS 9)
+    # 1. MEGATRON: Dinâmico para qualquer dígito zerado
     def _analyze_megatron(self):
         if len(self.ticks) < 25: return None
-        percentages = {str(i): (self.ticks.count(str(i)) / 25) * 100 for i in range(10)}
-        cluster_megatron = self.ticks[-10:].count('9') >= 3
-        return {"cluster": cluster_megatron, "perc_9": percentages['9']}
+        counts = {str(i): self.ticks.count(str(i)) for i in range(10)}
+        
+        # Procura qualquer dígito que tenha frequência ZERO (0%)
+        zero_digits = [int(d) for d, count in counts.items() if count == 0]
+        
+        return {"zero_digits": zero_digits}
 
-    # ANÁLISE LOUCO (RISE / FALL)
+    # 2. LOUCO: Rise / Fall
     def _analyze_louco(self):
         if len(self.raw_prices) < 10: return None
         movements = []
@@ -156,32 +162,72 @@ class DerivBot:
         if score >= 3: return "CALL" if is_up_trend else "PUT"
         return None
 
-    # ANÁLISE DE RISCO: HALIKINA (OVER 1) E FLASH (OVER 2)
-    def _get_risk_percentage(self, loss_digits):
-        """Soma as porcentagens dos dígitos que podem dar loss na estratégia"""
-        if len(self.ticks) < 25: return 100
-        total_risk = sum((self.ticks.count(str(d)) / 25) * 100 for d in loss_digits)
-        return total_risk
+    # 3. HALIKINA: Over 1 Fixo com Análise
+    def _analyze_halikina(self):
+        if len(self.ticks) < 25: return None
+        target = self.halikina_barrier
+        over_pct = (sum(1 for t in self.ticks if int(t) > target) / 25) * 100
+        under_pct = (sum(1 for t in self.ticks if int(t) < target) / 25) * 100
+        last_3 = [int(t) for t in self.ticks[-3:]]
+        
+        score = 0
+        enter, contract = False, None
+
+        if self.halikina_type == "OVER":
+            if over_pct > 50: score += 2
+            if all(t > target for t in last_3): score += 1
+            if score >= 3: enter, contract = True, "DIGITOVER"
+                
+        elif self.halikina_type == "UNDER":
+            if under_pct > 50: score += 2
+            if all(t < target for t in last_3): score += 1
+            if score >= 3: enter, contract = True, "DIGITUNDER"
+
+        return {"enter": enter, "contract": contract, "barrier": target}
+
+    # 4. FLASH: Analise Inteligente (Over 1 ou Under 8)
+    def _analyze_flash(self):
+        if len(self.ticks) < 25: return None
+        
+        # Riscos baseados na frequência de saída dos últimos 25 ticks
+        risk_over_1 = self.ticks.count('0') + self.ticks.count('1')
+        risk_under_8 = self.ticks.count('8') + self.ticks.count('9')
+        
+        # Momentum recente (Média dos últimos 3 ticks)
+        avg_last_3 = sum(int(x) for x in self.ticks[-3:]) / 3
+
+        contract, barrier = None, None
+
+        # Exigimos que o risco de perda seja <= 1 ocorrência (<= 4%) para atirar
+        if risk_over_1 <= 1 and risk_under_8 > 1:
+            if avg_last_3 >= 3: # Tendência de alta confirmada
+                contract, barrier = "DIGITOVER", 1
+                
+        elif risk_under_8 <= 1 and risk_over_1 > 1:
+            if avg_last_3 <= 6: # Tendência de baixa confirmada
+                contract, barrier = "DIGITUNDER", 8
+                
+        elif risk_over_1 <= 1 and risk_under_8 <= 1:
+            # Se os dois estão excelentes, o Momentum desempata
+            if avg_last_3 > 4.5: contract, barrier = "DIGITOVER", 1
+            else: contract, barrier = "DIGITUNDER", 8
+
+        return {"contract": contract, "barrier": barrier}
 
     async def check_strategy(self):
         if not self.running or not self.auto_mode or self.bot_status != "ANALYZING" or self.reanalyzing:
             return
 
-        # ================= MEGATRON =================
         if self.strategy == "MEGATRON":
-            analysis = self._analyze_megatron()
-            if not analysis: return
-            if analysis["cluster"]:
-                self.bot_status = "PAUSED"
-                asyncio.create_task(self._pause_and_reanalyze(10))
-                return
-            
             if self.losses_in_row == 0:
-                if analysis["perc_9"] == 0: await self.execute_trade("DIGITDIFF", 9, self.stake, 1, "t")
+                analysis = self._analyze_megatron()
+                # Se a lista tiver algum dígito zerado, atira no primeiro que achar
+                if analysis and len(analysis["zero_digits"]) > 0:
+                    target_digit = analysis["zero_digits"][0]
+                    await self.execute_trade("DIGITDIFF", target_digit, self.stake, 1, "t")
             elif self.losses_in_row == 1:
                 await self.execute_trade("DIGITOVER", 2, self.recovery_stake, 1, "t")
 
-        # ================= LOUCO =================
         elif self.strategy == "LOUCO":
             if self.losses_in_row == 0:
                 direction = self._analyze_louco()
@@ -189,25 +235,22 @@ class DerivBot:
             elif self.losses_in_row == 1:
                 await self.execute_trade("DIGITOVER", 2, self.recovery_stake, 1, "t")
 
-        # ================= HALIKINA (OVER 1) =================
         elif self.strategy == "HALIKINA":
             if self.losses_in_row == 0:
-                # O risco é sair 0 ou 1. Se a soma desses dois for <= 5%, o bot atira
-                risk = self._get_risk_percentage([0, 1])
-                if risk <= 5: 
-                    await self.execute_trade("DIGITOVER", 1, self.stake, 1, "t")
+                analysis = self._analyze_halikina()
+                if analysis and analysis["enter"]:
+                    await self.execute_trade(analysis["contract"], analysis["barrier"], self.stake, self.halikina_duration_value, self.halikina_duration_unit)
             elif self.losses_in_row == 1:
-                await self.execute_trade("DIGITOVER", 2, self.recovery_stake, 1, "t")
+                contract = "DIGITOVER" if self.halikina_type == "OVER" else "DIGITUNDER"
+                await self.execute_trade(contract, self.halikina_barrier, self.recovery_stake, self.halikina_duration_value, self.halikina_duration_unit)
 
-        # ================= FLASH (OVER 2) =================
         elif self.strategy == "FLASH":
             if self.losses_in_row == 0:
-                # O risco é sair 0, 1 ou 2. Se a soma desses três for <= 5%, o bot atira
-                risk = self._get_risk_percentage([0, 1, 2])
-                if risk <= 5: 
-                    await self.execute_trade("DIGITOVER", 2, self.stake, 1, "t")
+                analysis = self._analyze_flash()
+                if analysis and analysis["contract"]:
+                    await self.execute_trade(analysis["contract"], analysis["barrier"], self.stake, 1, "t")
             elif self.losses_in_row == 1:
-                # Na recuperação do Over 2, ele atira no Over 2 novamente mas com martingale
+                # Recuperação padrão do Flash tenta manter a segurança no meio
                 await self.execute_trade("DIGITOVER", 2, self.recovery_stake, 1, "t")
 
 
@@ -252,14 +295,11 @@ class DerivBot:
         else:
             if is_win:
                 self.losses_in_row = 0 
-                self.bot_status = "ANALYZING"
+                # COOLDOWN DE 2 SEGUNDOS ANTES DE VOLTAR A ANALISAR
+                self.bot_status = "COOLDOWN"
+                asyncio.create_task(self._cooldown_routine(2))
             else:
-                if self.strategy == "LOUCO" and self.losses_in_row == 0:
-                    if exit_digit in ['0', '9']: self.losses_in_row = 1 
-                    else: self.losses_in_row = 0 
-                else:
-                    self.losses_in_row += 1
-
+                self.losses_in_row += 1
                 if self.losses_in_row >= 2:
                     self.losses_in_row = 0 
                     self.bot_status = "PAUSED"
@@ -268,6 +308,13 @@ class DerivBot:
                     self.bot_status = "ANALYZING" 
 
         asyncio.create_task(self._update_frontend_dashboard())
+
+    # Rotina para o delay de 2 segundos após vitória
+    async def _cooldown_routine(self, seconds):
+        await asyncio.sleep(seconds)
+        if self.running and self.bot_status == "COOLDOWN":
+            self.bot_status = "ANALYZING"
+            asyncio.create_task(self._update_frontend_dashboard())
 
     async def _pause_and_reanalyze(self, seconds):
         self.reanalyzing = True
@@ -319,12 +366,18 @@ async def websocket_endpoint(websocket: WebSocket):
                 await bot._update_frontend_dashboard()
                 
             elif command == "manual_trade":
-                if not bot.running or bot.bot_status != "ANALYZING": continue
+                if not bot.running or bot.bot_status not in ["ANALYZING", "COOLDOWN"]: continue
                 strat = data.get("strat")
-                if strat == "MEGATRON": await bot.execute_trade("DIGITDIFF", 9, bot.stake, 1, "t")
+                
+                if strat == "MEGATRON": 
+                    # Tenta pegar um digito zerado. Se não achar, atira no 9 como segurança.
+                    analysis = bot._analyze_megatron()
+                    target = analysis["zero_digits"][0] if analysis and len(analysis["zero_digits"]) > 0 else 9
+                    await bot.execute_trade("DIGITDIFF", target, bot.stake, 1, "t")
+                    
                 elif strat == "LOUCO": await bot.execute_trade(data.get("direction"), None, bot.stake, bot.louco_duration_value, bot.louco_duration_unit)
-                elif strat == "HALIKINA": await bot.execute_trade("DIGITOVER", 1, bot.stake, 1, "t")
-                elif strat == "FLASH": await bot.execute_trade("DIGITOVER", 2, bot.stake, 1, "t")
+                elif strat == "HALIKINA": await bot.execute_trade(data.get("contract"), bot.halikina_barrier, bot.stake, bot.halikina_duration_value, bot.halikina_duration_unit)
+                elif strat == "FLASH": await bot.execute_trade(data.get("contract"), data.get("barrier"), bot.stake, 1, "t")
                 
             elif command == "reset_stats":
                 bot.total_profit = 0.0; bot.trades_count = 0; bot.wins = 0; bot.losses = 0; bot.losses_in_row = 0
@@ -340,6 +393,10 @@ async def websocket_endpoint(websocket: WebSocket):
                 bot.take_profit = float(data.get("take_profit", bot.take_profit))
                 bot.louco_duration_unit = data.get("louco_unit", "t")
                 bot.louco_duration_value = int(data.get("louco_val", 1))
+                bot.halikina_type = data.get("halikina_type", "OVER")
+                bot.halikina_barrier = int(data.get("halikina_barrier", 4))
+                bot.halikina_duration_unit = data.get("halikina_unit", "t")
+                bot.halikina_duration_value = int(data.get("halikina_val", 1))
 
     except WebSocketDisconnect:
         bot.running = False
