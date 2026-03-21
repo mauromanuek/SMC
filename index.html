@@ -86,9 +86,14 @@
         .btn-over { background: var(--blue-accent); } .btn-over:hover{ background: #0077e6; }
         .btn-under { background: var(--orange); } .btn-under:hover{ background: #e67e22; }
 
-        .tabs { display: flex; margin-bottom: 10px; }
+        .tabs { display: flex; margin-bottom: 10px; align-items: center; justify-content: space-between;}
+        .tabs-group { display: flex; flex: 1; }
         .tab { flex: 1; text-align: center; padding: 12px; font-size: 12px; font-weight: bold; cursor: pointer; border-bottom: 2px solid transparent; color: var(--text-muted); }
         .tab.active { color: white; border-bottom-color: var(--blue-accent); background: linear-gradient(0deg, rgba(0,136,255,0.1) 0%, transparent 100%); }
+        
+        /* BOTÃO DE LIXEIRA */
+        .btn-trash { padding: 12px 15px; cursor: pointer; border-bottom: 2px solid transparent; transition: 0.2s;}
+        .btn-trash:hover i { color: var(--red) !important; }
         
         .history-table { width: 100%; font-size: 12px; text-align: left; border-collapse: collapse; }
         .history-table th { color: var(--text-muted); padding: 10px 5px; border-bottom: 1px solid var(--border); }
@@ -122,6 +127,7 @@
 
     <header id="main-header" style="display: none;">
         <div class="logo"><i class="fa-solid fa-bolt"></i> TURBO BOT</div>
+        <div class="menu-btn" id="wake-status" style="color: var(--green); font-size:10px;"><i class="fa-solid fa-eye"></i> TELA ATIVA</div>
     </header>
 
     <div id="dashboard-screen">
@@ -193,6 +199,17 @@
             </div>
         </div>
 
+        <!-- ABAS COM A LIXEIRA DE VOLTA -->
+        <div class="tabs">
+            <div class="tabs-group">
+                <div class="tab active">TRADER</div>
+                <div class="tab">NOTIFICAÇÕES (0)</div>
+            </div>
+            <div class="btn-trash" onclick="resetStats()" title="Zerar Estatísticas">
+                <i class="fa-solid fa-trash" style="color:var(--text-muted); font-size:16px;"></i>
+            </div>
+        </div>
+
         <table class="history-table">
             <thead><tr><th>TYPE</th><th>TICK</th><th>PRICE</th><th>RESULT</th></tr></thead>
             <tbody id="history-body">
@@ -236,17 +253,41 @@
         let isEngineRunning = false;
         let isAutoMode = false;
         let currentStrat = "MEGATRON";
+        let wakeLock = null; // Variável para a tela não apagar
 
         const chartContainer = document.getElementById('bar-chart-container');
         for (let i = 0; i <= 9; i++) {
             chartContainer.innerHTML += `<div class="bar-col"><div class="bar-pct" id="pct-${i}">0%</div><div class="bar-track"><div class="bar-fill" id="bar-${i}" style="height: 0%"></div></div><div class="bar-label">${i}</div></div>`;
         }
         
+        // FUNÇÃO PARA MANTER A TELA LIGADA
+        async function requestWakeLock() {
+            try {
+                if ('wakeLock' in navigator) {
+                    wakeLock = await navigator.wakeLock.request('screen');
+                    document.getElementById('wake-status').style.display = 'block';
+                    wakeLock.addEventListener('release', () => {
+                        console.log('Screen Wake Lock released');
+                    });
+                }
+            } catch (err) {
+                console.log('Wake Lock Error:', err);
+            }
+        }
+
+        // Renova o WakeLock caso o usuário mude de aba e volte
+        document.addEventListener('visibilitychange', async () => {
+            if (wakeLock !== null && document.visibilityState === 'visible') {
+                await requestWakeLock();
+            }
+        });
+
         function connectBot() {
             const token = document.getElementById('api-token').value;
             if (!token) return;
             document.getElementById('error-msg').style.display = 'none';
             ws = new WebSocket((window.location.protocol === 'https:' ? 'wss://' : 'ws://') + window.location.host + '/ws');
+            
             ws.onopen = () => ws.send(JSON.stringify({ action: "connect", token: token }));
             ws.onmessage = (event) => {
                 const msg = JSON.parse(event.data);
@@ -254,6 +295,7 @@
                     document.getElementById('login-screen').style.display = 'none';
                     document.getElementById('main-header').style.display = 'flex';
                     document.getElementById('dashboard-screen').style.display = 'block';
+                    requestWakeLock(); // Pede para a tela ficar ligada assim que loga
                 }
                 else if (msg.type === "auth_error") {
                     document.getElementById('error-msg').innerText = msg.msg;
@@ -261,7 +303,6 @@
                 }
                 else if (msg.type === "dashboard") updateDashboard(msg);
                 else if (msg.type === "ticks_update") { 
-                    // Otimização: Só desenha o gráfico que está visível
                     if(currentStrat === "MEGATRON" || currentStrat === "HALIKINA") updateBarChart(msg.ticks);
                     else if (currentStrat === "LOUCO") requestAnimationFrame(() => drawLineChart(msg.prices));
                 }
@@ -317,7 +358,6 @@
         }
 
         function updateDashboard(data) {
-            // Otimização: Só atualiza se o valor for diferente
             const balStr = `$ ${data.balance.toFixed(2)} USD`;
             const balEl = document.getElementById('val-balance');
             if(balEl.innerText !== balStr) balEl.innerText = balStr;
@@ -346,7 +386,6 @@
                 let pctEl = document.getElementById(`pct-${i}`);
                 let barEl = document.getElementById(`bar-${i}`);
                 
-                // Otimização DOM: Só escreve se mudou
                 const newPctStr = `${pct}%`;
                 if(pctEl.innerText !== newPctStr) pctEl.innerText = newPctStr;
                 
@@ -400,6 +439,12 @@
             row.innerHTML = `<td>${trade.type.substring(0,6)}</td><td>${trade.tick}</td><td>$ ${trade.stake.toFixed(2)}</td><td class="${trade.profit > 0 ? 'win' : 'loss'}">${trade.profit > 0 ? '+' : ''}$ ${trade.profit.toFixed(2)}</td>`;
             tbody.prepend(row);
             if(tbody.children.length > 50) tbody.lastChild.remove();
+        }
+
+        // LIXEIRA: Limpa a tela HTML e manda o Backend zerar variáveis
+        function resetStats() {
+            document.getElementById('history-body').innerHTML = '<tr><td colspan="4" style="text-align:center; color:var(--text-muted); padding:20px;">No trades yet</td></tr>';
+            if (ws && ws.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ action: 'reset_stats' })); }
         }
 
         function openSettings() { 
