@@ -10,7 +10,7 @@
             --bg-main: #061930; --bg-panel: #112642; --bg-header: #020e1e;
             --text-main: #ffffff; --text-muted: #8b9bb4; --green: #2ecc71;
             --red: #e74c3c; --blue-accent: #0088ff; --orange: #f39c12;
-            --border: #1e3557; --bar-bg: #e2e8f0;
+            --yellow: #f1c40f; --border: #1e3557; --bar-bg: #e2e8f0;
         }
 
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', sans-serif; }
@@ -73,20 +73,23 @@
         .status-node { z-index: 2; display: flex; flex-direction: column; align-items: center; gap: 5px; }
         .node-dot { width: 14px; height: 14px; border-radius: 50%; background: var(--border); border: 2px solid var(--bg-main); transition: 0.3s; }
         .node-label { font-size: 9px; font-weight: bold; color: var(--text-muted); }
+        
         .status-node.active .node-dot { background: white; box-shadow: 0 0 8px white; }
         .status-node.active .node-label { color: white; }
+        /* Cooldown State (Amarelo) */
+        .status-node.cooldown .node-dot { background: var(--yellow); box-shadow: 0 0 8px var(--yellow); border-color: var(--yellow); }
+        .status-node.cooldown .node-label { color: var(--yellow); }
 
         #manual-controls { display: none; margin-bottom: 20px; background: var(--bg-panel); border-radius: 8px; padding: 15px; border: 1px solid var(--border); }
         .manual-title { font-size: 12px; color: var(--text-muted); margin-bottom: 10px; text-align: center; font-weight: bold;}
         .manual-grid { display: flex; gap: 10px; }
         .btn-manual { flex:1; padding: 12px; font-weight: bold; border-radius: 6px; border: none; cursor: pointer; color: white; transition: 0.2s;}
         
-        /* CORES ESPECÍFICAS DE CADA ESTRATÉGIA */
         .btn-differs { background: var(--blue-accent); } .btn-differs:hover{ background: #0077e6; }
         .btn-call { background: var(--green); } .btn-call:hover{ background: #27ae60; }
         .btn-put { background: var(--red); } .btn-put:hover{ background: #c0392b; }
-        .btn-halikina { background: #8e44ad; } .btn-halikina:hover{ background: #732d91; }
-        .btn-flash { background: var(--orange); } .btn-flash:hover{ background: #d35400; }
+        .btn-over { background: var(--blue-accent); } .btn-over:hover{ background: #0077e6; }
+        .btn-under { background: var(--orange); } .btn-under:hover{ background: #e67e22; }
 
         .tabs { display: flex; margin-bottom: 10px; align-items: center; justify-content: space-between;}
         .tabs-group { display: flex; flex: 1; }
@@ -152,10 +155,10 @@
             <div class="selector-box">
                 <div class="label">Estratégia</div>
                 <select id="strategy-select" onchange="changeStrategy()">
-                    <option value="MEGATRON">Megatron (Differs 9)</option>
+                    <option value="MEGATRON">Megatron (Differs 0%)</option>
                     <option value="LOUCO">Louco (Rise/Fall)</option>
-                    <option value="HALIKINA">Halikina (Over 1)</option>
-                    <option value="FLASH">Flash (Over 2)</option>
+                    <option value="HALIKINA">Halikina (Over/Under)</option>
+                    <option value="FLASH">Flash (Over 1/Under 8)</option>
                 </select>
             </div>
         </div>
@@ -179,7 +182,8 @@
             
             <div class="status-tracker">
                 <div class="status-line"></div>
-                <div class="status-node" id="node-analyzing"><div class="node-dot"></div><div class="node-label">ANALYZING</div></div>
+                <!-- Agora o nó ANALYZING também servirá para COOLDOWN visualmente -->
+                <div class="status-node" id="node-analyzing"><div class="node-dot"></div><div class="node-label" id="lbl-analyzing">ANALYZING</div></div>
                 <div class="status-node" id="node-open"><div class="node-dot"></div><div class="node-label">OPEN</div></div>
                 <div class="status-node" id="node-closed"><div class="node-dot"></div><div class="node-label">CLOSED</div></div>
             </div>
@@ -189,7 +193,7 @@
             <div class="manual-title">ATIRAR MANUALMENTE</div>
             
             <div class="manual-grid" id="manual-megatron">
-                <button class="btn-manual btn-differs" onclick="sendManualTrade('MEGATRON', null)"><i class="fa-solid fa-bullseye"></i> DIFFERS 9</button>
+                <button class="btn-manual btn-differs" onclick="sendManualTrade('MEGATRON', null)"><i class="fa-solid fa-bullseye"></i> COMPRAR DIFFERS (0%)</button>
             </div>
             
             <div class="manual-grid" id="manual-louco" style="display:none;">
@@ -198,11 +202,13 @@
             </div>
             
             <div class="manual-grid" id="manual-halikina" style="display:none;">
-                <button class="btn-manual btn-halikina" onclick="sendManualTrade('HALIKINA', null)"><i class="fa-solid fa-angle-up"></i> OVER 1</button>
+                <button class="btn-manual btn-over" onclick="sendManualTrade('HALIKINA', 'DIGITOVER')"><i class="fa-solid fa-angle-up"></i> BUY OVER</button>
+                <button class="btn-manual btn-under" onclick="sendManualTrade('HALIKINA', 'DIGITUNDER')"><i class="fa-solid fa-angle-down"></i> BUY UNDER</button>
             </div>
             
             <div class="manual-grid" id="manual-flash" style="display:none;">
-                <button class="btn-manual btn-flash" onclick="sendManualTrade('FLASH', null)"><i class="fa-solid fa-angle-double-up"></i> OVER 2</button>
+                <button class="btn-manual btn-over" onclick="sendManualTrade('FLASH', 'DIGITOVER', 1)"><i class="fa-solid fa-angle-double-up"></i> OVER 1</button>
+                <button class="btn-manual btn-under" onclick="sendManualTrade('FLASH', 'DIGITUNDER', 8)"><i class="fa-solid fa-angle-double-down"></i> UNDER 8</button>
             </div>
         </div>
 
@@ -237,6 +243,14 @@
                 <div class="section-title">Rise / Fall (Louco)</div>
                 <div class="input-group"><label>Tempo</label><select id="inp-louco-unit"><option value="t">Ticks</option><option value="m">Minutos</option></select></div>
                 <div class="input-group"><label>Valor (1 a 5)</label><input type="number" id="inp-louco-val" value="1"></div>
+            </div>
+
+            <div id="halikina-settings" style="display: none;">
+                <div class="section-title">Over / Under (Halikina)</div>
+                <div class="input-group"><label>Auto Mode Atira Em:</label><select id="inp-hali-type"><option value="OVER">OVER</option><option value="UNDER">UNDER</option></select></div>
+                <div class="input-group"><label>Barreira (Dígito Alvo)</label><input type="number" id="inp-hali-barrier" value="4"></div>
+                <div class="input-group"><label>Tempo</label><select id="inp-hali-unit"><option value="t">Ticks</option><option value="m">Minutos</option></select></div>
+                <div class="input-group"><label>Valor (1 a 5)</label><input type="number" id="inp-hali-val" value="1"></div>
             </div>
 
             <div class="modal-buttons">
@@ -320,10 +334,11 @@
             document.getElementById('manual-controls').style.display = (!isAutoMode && isEngineRunning) ? 'block' : 'none';
         }
 
-        function sendManualTrade(strat, contract) {
+        function sendManualTrade(strat, contract, barrier=null) {
             if (ws && ws.readyState === WebSocket.OPEN) {
                 let p = { action: "manual_trade", strat: strat };
-                if (strat === "LOUCO") p.direction = contract;
+                if (strat === "LOUCO" || strat === "HALIKINA" || strat === "FLASH") p.contract = contract;
+                if (strat === "FLASH") p.barrier = barrier; // Envia a barreira (1 ou 8)
                 ws.send(JSON.stringify(p));
             }
         }
@@ -336,9 +351,11 @@
                 document.getElementById('bar-chart-container').style.display = 'flex';
                 document.getElementById('tick-chart-container').style.display = 'none';
                 document.getElementById('chart-title').innerHTML = `Análise Digitos 0-9: <span id="last-digit-text">-</span>`;
+                
                 if(currentStrat === "MEGATRON") document.getElementById('manual-megatron').style.display = 'flex';
                 if(currentStrat === "HALIKINA") document.getElementById('manual-halikina').style.display = 'flex';
                 if(currentStrat === "FLASH") document.getElementById('manual-flash').style.display = 'flex';
+                
             } else if (currentStrat === "LOUCO") {
                 document.getElementById('bar-chart-container').style.display = 'none';
                 document.getElementById('tick-chart-container').style.display = 'block';
@@ -417,10 +434,28 @@
         }
 
         function updateStatusBar(status) {
-            ['node-analyzing', 'node-open', 'node-closed'].forEach(id => document.getElementById(id).classList.remove('active'));
-            if(status === "ANALYZING") document.getElementById('node-analyzing').classList.add('active');
-            else if(status === "OPEN_CONTRACT") document.getElementById('node-open').classList.add('active');
-            else if(status === "CLOSED_CONTRACT") document.getElementById('node-closed').classList.add('active');
+            ['node-analyzing', 'node-open', 'node-closed'].forEach(id => {
+                document.getElementById(id).classList.remove('active');
+                document.getElementById(id).classList.remove('cooldown');
+            });
+            const lbl = document.getElementById('lbl-analyzing');
+            
+            if(status === "ANALYZING") {
+                document.getElementById('node-analyzing').classList.add('active');
+                lbl.innerText = "ANALYZING";
+            }
+            else if(status === "COOLDOWN") {
+                // Aplica cor amarela indicando pausa
+                document.getElementById('node-analyzing').classList.add('cooldown');
+                lbl.innerText = "ESPERANDO...";
+            }
+            else if(status === "OPEN_CONTRACT") {
+                document.getElementById('node-open').classList.add('active');
+                lbl.innerText = "ANALYZING"; // Reseta texto
+            }
+            else if(status === "CLOSED_CONTRACT") {
+                document.getElementById('node-closed').classList.add('active');
+            }
         }
 
         function addTradeToHistory(trade) {
@@ -439,6 +474,7 @@
 
         function openSettings() { 
             document.getElementById('louco-settings').style.display = (currentStrat === "LOUCO") ? 'block' : 'none';
+            document.getElementById('halikina-settings').style.display = (currentStrat === "HALIKINA") ? 'block' : 'none';
             document.getElementById('settings-modal').style.display = 'flex'; 
         }
         function closeSettings() { document.getElementById('settings-modal').style.display = 'none'; }
@@ -452,7 +488,11 @@
                     stop_loss: document.getElementById('inp-loss').value,
                     take_profit: document.getElementById('inp-profit').value,
                     louco_unit: document.getElementById('inp-louco-unit').value,
-                    louco_val: document.getElementById('inp-louco-val').value
+                    louco_val: document.getElementById('inp-louco-val').value,
+                    halikina_type: document.getElementById('inp-hali-type').value,
+                    halikina_barrier: document.getElementById('inp-hali-barrier').value,
+                    halikina_unit: document.getElementById('inp-hali-unit').value,
+                    halikina_val: document.getElementById('inp-hali-val').value
                 }));
             }
             closeSettings();
