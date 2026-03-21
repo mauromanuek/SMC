@@ -41,18 +41,15 @@ class DerivBot:
         self.reanalyzing = False
         self.strategy = "MEGATRON" 
         
+        # Configurações Globais
         self.stake = 1.00
         self.recovery_stake = 2.50
         self.stop_loss = 10.00
         self.take_profit = 10.00
         
+        # Configurações Louco
         self.louco_duration_unit = "t" 
         self.louco_duration_value = 1  
-        
-        self.halikina_type = "OVER"
-        self.halikina_barrier = 4   
-        self.halikina_duration_unit = "t" 
-        self.halikina_duration_value = 1 
 
     async def connect_deriv(self, token):
         self.token = token
@@ -126,13 +123,14 @@ class DerivBot:
             "prices": self.raw_prices
         }))
 
+    # ANÁLISE MEGATRON (DIFFERS 9)
     def _analyze_megatron(self):
         if len(self.ticks) < 25: return None
         percentages = {str(i): (self.ticks.count(str(i)) / 25) * 100 for i in range(10)}
-        
         cluster_megatron = self.ticks[-10:].count('9') >= 3
         return {"cluster": cluster_megatron, "perc_9": percentages['9']}
 
+    # ANÁLISE LOUCO (RISE / FALL)
     def _analyze_louco(self):
         if len(self.raw_prices) < 10: return None
         movements = []
@@ -155,49 +153,21 @@ class DerivBot:
         if not is_alternating: score += 1           
         if "FLAT" not in last_5: score += 1         
         
-        if score >= 3:
-            return "CALL" if is_up_trend else "PUT"
+        if score >= 3: return "CALL" if is_up_trend else "PUT"
         return None
 
-    def _analyze_halikina(self):
-        if len(self.ticks) < 25: return None
-        target = self.halikina_barrier
-        
-        over_count = sum(1 for t in self.ticks if int(t) > target)
-        under_count = sum(1 for t in self.ticks if int(t) < target)
-        
-        over_pct = (over_count / 25) * 100
-        under_pct = (under_count / 25) * 100
-
-        last_3_digits = [int(t) for t in self.ticks[-3:]]
-        
-        score = 0
-        should_enter = False
-        contract_to_buy = None
-
-        if self.halikina_type == "OVER":
-            if over_pct > 50: score += 2
-            if all(t > target for t in last_3_digits): score += 1
-            if score >= 3:
-                should_enter = True
-                contract_to_buy = "DIGITOVER"
-                
-        elif self.halikina_type == "UNDER":
-            if under_pct > 50: score += 2
-            if all(t < target for t in last_3_digits): score += 1
-            if score >= 3:
-                should_enter = True
-                contract_to_buy = "DIGITUNDER"
-
-        return {"enter": should_enter, "contract": contract_to_buy, "barrier": target}
+    # ANÁLISE DE RISCO: HALIKINA (OVER 1) E FLASH (OVER 2)
+    def _get_risk_percentage(self, loss_digits):
+        """Soma as porcentagens dos dígitos que podem dar loss na estratégia"""
+        if len(self.ticks) < 25: return 100
+        total_risk = sum((self.ticks.count(str(d)) / 25) * 100 for d in loss_digits)
+        return total_risk
 
     async def check_strategy(self):
         if not self.running or not self.auto_mode or self.bot_status != "ANALYZING" or self.reanalyzing:
             return
 
-        # ==========================================
-        # 1. MEGATRON (SÓ ENTRA EM 0%)
-        # ==========================================
+        # ================= MEGATRON =================
         if self.strategy == "MEGATRON":
             analysis = self._analyze_megatron()
             if not analysis: return
@@ -207,39 +177,42 @@ class DerivBot:
                 return
             
             if self.losses_in_row == 0:
-                # REGRA ALTERADA: O bot só atira se o dígito 9 estiver EXATAMENTE em 0%
-                if analysis["perc_9"] == 0:
-                    await self.execute_trade("DIGITDIFF", 9, self.stake, 1, "t")
+                if analysis["perc_9"] == 0: await self.execute_trade("DIGITDIFF", 9, self.stake, 1, "t")
             elif self.losses_in_row == 1:
-                # Recuperação (OVER 2) continua normal
                 await self.execute_trade("DIGITOVER", 2, self.recovery_stake, 1, "t")
 
-        # ==========================================
-        # 2. LOUCO (RISE / FALL)
-        # ==========================================
+        # ================= LOUCO =================
         elif self.strategy == "LOUCO":
             if self.losses_in_row == 0:
                 direction = self._analyze_louco()
-                if direction: 
-                    await self.execute_trade(direction, None, self.stake, self.louco_duration_value, self.louco_duration_unit)
+                if direction: await self.execute_trade(direction, None, self.stake, self.louco_duration_value, self.louco_duration_unit)
             elif self.losses_in_row == 1:
                 await self.execute_trade("DIGITOVER", 2, self.recovery_stake, 1, "t")
 
-        # ==========================================
-        # 3. HALIKINA (OVER / UNDER)
-        # ==========================================
+        # ================= HALIKINA (OVER 1) =================
         elif self.strategy == "HALIKINA":
             if self.losses_in_row == 0:
-                analysis = self._analyze_halikina()
-                if analysis and analysis["enter"]:
-                    await self.execute_trade(analysis["contract"], analysis["barrier"], self.stake, self.halikina_duration_value, self.halikina_duration_unit)
+                # O risco é sair 0 ou 1. Se a soma desses dois for <= 5%, o bot atira
+                risk = self._get_risk_percentage([0, 1])
+                if risk <= 5: 
+                    await self.execute_trade("DIGITOVER", 1, self.stake, 1, "t")
             elif self.losses_in_row == 1:
-                contract = "DIGITOVER" if self.halikina_type == "OVER" else "DIGITUNDER"
-                await self.execute_trade(contract, self.halikina_barrier, self.recovery_stake, self.halikina_duration_value, self.halikina_duration_unit)
+                await self.execute_trade("DIGITOVER", 2, self.recovery_stake, 1, "t")
+
+        # ================= FLASH (OVER 2) =================
+        elif self.strategy == "FLASH":
+            if self.losses_in_row == 0:
+                # O risco é sair 0, 1 ou 2. Se a soma desses três for <= 5%, o bot atira
+                risk = self._get_risk_percentage([0, 1, 2])
+                if risk <= 5: 
+                    await self.execute_trade("DIGITOVER", 2, self.stake, 1, "t")
+            elif self.losses_in_row == 1:
+                # Na recuperação do Over 2, ele atira no Over 2 novamente mas com martingale
+                await self.execute_trade("DIGITOVER", 2, self.recovery_stake, 1, "t")
+
 
     async def execute_trade(self, contract_type, barrier, stake, duration, duration_unit):
         self.bot_status = "OPEN_CONTRACT"
-        
         params = {
             "amount": stake, "basis": "stake", "contract_type": contract_type,
             "currency": "USD", "duration": duration, "duration_unit": duration_unit, "symbol": SYMBOL
@@ -317,8 +290,7 @@ class DerivBot:
         })
 
     async def _send_to_frontend(self, data):
-        try:
-            await self.client_ws.send_json(data)
+        try: await self.client_ws.send_json(data)
         except: pass
 
 
@@ -345,17 +317,22 @@ async def websocket_endpoint(websocket: WebSocket):
             elif command == "toggle_auto":
                 bot.auto_mode = data.get("auto")
                 await bot._update_frontend_dashboard()
+                
             elif command == "manual_trade":
                 if not bot.running or bot.bot_status != "ANALYZING": continue
                 strat = data.get("strat")
                 if strat == "MEGATRON": await bot.execute_trade("DIGITDIFF", 9, bot.stake, 1, "t")
                 elif strat == "LOUCO": await bot.execute_trade(data.get("direction"), None, bot.stake, bot.louco_duration_value, bot.louco_duration_unit)
-                elif strat == "HALIKINA": await bot.execute_trade(data.get("contract"), bot.halikina_barrier, bot.stake, bot.halikina_duration_value, bot.halikina_duration_unit)
+                elif strat == "HALIKINA": await bot.execute_trade("DIGITOVER", 1, bot.stake, 1, "t")
+                elif strat == "FLASH": await bot.execute_trade("DIGITOVER", 2, bot.stake, 1, "t")
+                
             elif command == "reset_stats":
                 bot.total_profit = 0.0; bot.trades_count = 0; bot.wins = 0; bot.losses = 0; bot.losses_in_row = 0
                 await bot._update_frontend_dashboard()
+                
             elif command == "set_strategy":
                 bot.strategy = data.get("strategy")
+                
             elif command == "update_settings":
                 bot.stake = float(data.get("stake", bot.stake))
                 bot.recovery_stake = float(data.get("recovery_stake", bot.recovery_stake))
@@ -363,10 +340,6 @@ async def websocket_endpoint(websocket: WebSocket):
                 bot.take_profit = float(data.get("take_profit", bot.take_profit))
                 bot.louco_duration_unit = data.get("louco_unit", "t")
                 bot.louco_duration_value = int(data.get("louco_val", 1))
-                bot.halikina_type = data.get("halikina_type", "OVER")
-                bot.halikina_barrier = int(data.get("halikina_barrier", 4))
-                bot.halikina_duration_unit = data.get("halikina_unit", "t")
-                bot.halikina_duration_value = int(data.get("halikina_val", 1))
 
     except WebSocketDisconnect:
         bot.running = False
