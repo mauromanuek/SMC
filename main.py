@@ -58,7 +58,7 @@ class DerivBot:
         self.token = token
         uri = f"wss://ws.binaryws.com/websockets/v3?app_id={APP_ID}"
         try:
-            self.deriv_ws = await websockets.connect(uri, ping_interval=20, ping_timeout=20) # Ping otimizado para não cair
+            self.deriv_ws = await websockets.connect(uri, ping_interval=20, ping_timeout=20) 
             await self.deriv_ws.send(json.dumps({"authorize": self.token}))
             auth_response = json.loads(await self.deriv_ws.recv())
             
@@ -88,7 +88,6 @@ class DerivBot:
                 data = json.loads(message)
                 if "error" in data: continue
 
-                # Identificação OTIMIZADA do tipo de mensagem
                 msg_type = data.get("msg_type")
 
                 if msg_type == "tick":
@@ -107,7 +106,7 @@ class DerivBot:
 
                 elif msg_type == "balance":
                     self.balance = data["balance"]["balance"]
-                    asyncio.create_task(self._update_frontend_dashboard()) # Fire and forget
+                    asyncio.create_task(self._update_frontend_dashboard()) 
 
         except websockets.exceptions.ConnectionClosed:
             await asyncio.sleep(2)
@@ -121,7 +120,6 @@ class DerivBot:
         self.raw_prices.append(float(price))
         if len(self.raw_prices) > 25: self.raw_prices.pop(0)
             
-        # Envia ao frontend sem travar o backend
         asyncio.create_task(self._send_to_frontend({
             "type": "ticks_update", 
             "ticks": self.ticks,
@@ -131,19 +129,9 @@ class DerivBot:
     def _analyze_megatron(self):
         if len(self.ticks) < 25: return None
         percentages = {str(i): (self.ticks.count(str(i)) / 25) * 100 for i in range(10)}
-        delay_9 = 0
-        for tick in reversed(self.ticks):
-            if tick == '9': break
-            delay_9 += 1
-
+        
         cluster_megatron = self.ticks[-10:].count('9') >= 3
-        score = 0
-        if percentages['9'] < 10: score += 1
-        if 2 <= delay_9 <= 5: score += 1
-        if '9' not in self.ticks[-3:]: score += 1
-        if self.ticks[-12:].count('9') <= 1: score += 1
-
-        return {"cluster": cluster_megatron, "score": score, "perc_9": percentages['9']}
+        return {"cluster": cluster_megatron, "perc_9": percentages['9']}
 
     def _analyze_louco(self):
         if len(self.raw_prices) < 10: return None
@@ -207,6 +195,9 @@ class DerivBot:
         if not self.running or not self.auto_mode or self.bot_status != "ANALYZING" or self.reanalyzing:
             return
 
+        # ==========================================
+        # 1. MEGATRON (SÓ ENTRA EM 0%)
+        # ==========================================
         if self.strategy == "MEGATRON":
             analysis = self._analyze_megatron()
             if not analysis: return
@@ -214,12 +205,18 @@ class DerivBot:
                 self.bot_status = "PAUSED"
                 asyncio.create_task(self._pause_and_reanalyze(10))
                 return
+            
             if self.losses_in_row == 0:
-                if analysis["perc_9"] == 0 or analysis["score"] >= 3:
+                # REGRA ALTERADA: O bot só atira se o dígito 9 estiver EXATAMENTE em 0%
+                if analysis["perc_9"] == 0:
                     await self.execute_trade("DIGITDIFF", 9, self.stake, 1, "t")
             elif self.losses_in_row == 1:
+                # Recuperação (OVER 2) continua normal
                 await self.execute_trade("DIGITOVER", 2, self.recovery_stake, 1, "t")
 
+        # ==========================================
+        # 2. LOUCO (RISE / FALL)
+        # ==========================================
         elif self.strategy == "LOUCO":
             if self.losses_in_row == 0:
                 direction = self._analyze_louco()
@@ -228,6 +225,9 @@ class DerivBot:
             elif self.losses_in_row == 1:
                 await self.execute_trade("DIGITOVER", 2, self.recovery_stake, 1, "t")
 
+        # ==========================================
+        # 3. HALIKINA (OVER / UNDER)
+        # ==========================================
         elif self.strategy == "HALIKINA":
             if self.losses_in_row == 0:
                 analysis = self._analyze_halikina()
@@ -237,11 +237,9 @@ class DerivBot:
                 contract = "DIGITOVER" if self.halikina_type == "OVER" else "DIGITUNDER"
                 await self.execute_trade(contract, self.halikina_barrier, self.recovery_stake, self.halikina_duration_value, self.halikina_duration_unit)
 
-    # FUNÇÃO DE EXECUÇÃO ULTRA-RÁPIDA (ATIRA ANTES DE AVISAR O FRONTEND)
     async def execute_trade(self, contract_type, barrier, stake, duration, duration_unit):
         self.bot_status = "OPEN_CONTRACT"
         
-        # 1. Monta o Payload
         params = {
             "amount": stake, "basis": "stake", "contract_type": contract_type,
             "currency": "USD", "duration": duration, "duration_unit": duration_unit, "symbol": SYMBOL
@@ -249,11 +247,8 @@ class DerivBot:
         if barrier is not None: params["barrier"] = str(barrier)
         req = { "buy": 1, "price": stake, "parameters": params }
         
-        # 2. Atira para a Deriv IMEDIATAMENTE (Sem travar a thread)
         await self.deriv_ws.send(json.dumps(req))
         await self.deriv_ws.send(json.dumps({"proposal_open_contract": 1, "subscribe": 1}))
-        
-        # 3. Só depois avisa a interface que atirou
         asyncio.create_task(self._update_frontend_dashboard())
 
     async def _handle_contract_closed(self, contract):
@@ -274,11 +269,9 @@ class DerivBot:
             "stake": contract["buy_price"],
             "profit": profit
         }
-        # Envia para a tabela de histórico de forma assíncrona
         asyncio.create_task(self._send_to_frontend({"type": "trade_history", "data": trade_data}))
         asyncio.create_task(self._send_to_frontend({"type": "status_update", "status": "CLOSED_CONTRACT"}))
 
-        # Gestão e Recuperação IMEDIATA (Sem Sleep de 1 Segundo)
         if self.total_profit >= self.take_profit:
             self.bot_status = "STOPPED (META BATIDA)"
         elif self.total_profit <= -self.stop_loss:
@@ -297,11 +290,10 @@ class DerivBot:
                 if self.losses_in_row >= 2:
                     self.losses_in_row = 0 
                     self.bot_status = "PAUSED"
-                    asyncio.create_task(self._pause_and_reanalyze(10)) # Reduzido para 10s
+                    asyncio.create_task(self._pause_and_reanalyze(10)) 
                 else:
                     self.bot_status = "ANALYZING" 
 
-        # Atualiza o dashboard rapidamente
         asyncio.create_task(self._update_frontend_dashboard())
 
     async def _pause_and_reanalyze(self, seconds):
